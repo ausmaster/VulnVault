@@ -1,4 +1,5 @@
 {
   "mongoHost": "X.Y.Z.A",
-  "mongoPort": 27017
+  "mongoPort": 27017,
+  "apiKey": "XXXX-XXXX-XXXX-XXXX-XXXX"
 }
