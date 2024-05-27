@@ -1,0 +1,4 @@
+{
+  "mongoHost": "X.Y.Z.A",
+  "mongoPort": 27017
+}
