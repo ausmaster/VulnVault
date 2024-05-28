@@ -3,6 +3,7 @@ from pathlib import Path
 
 from utils import camel_to_snake
 
+
 class VaultConfig:
     def __init__(self, config_path: str = "config.json") -> None:
         # All config values have a default value and can be overridden via config.json file
@@ -34,7 +35,7 @@ class VaultConfig:
             g_vars = dir(self)
             for config_key, config_value in load(open(config_path, "r")).items():
                 config_key = camel_to_snake(config_key)
-                if not config_key in g_vars:
+                if config_key not in g_vars:
                     continue
 
                 if (g_var_type := type(getattr(self, config_key))) is not str:

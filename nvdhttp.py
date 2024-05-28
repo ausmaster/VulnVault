@@ -14,15 +14,15 @@ class NVDFetch:
     def __init__(self, config: VaultConfig) -> None:
         api_key_hdr = {"apiKey": config.api_key}
         self.__cves = partial(get, config.nvd_cve_api, headers=api_key_hdr)
-        self.cves_fetch_limit = 2_000 # Default and maximum by NVD
+        self.cves_fetch_limit = 2_000  # Default and maximum by NVD
         self.__cve_ch = partial(get, config.nvd_cve_ch_api, headers=api_key_hdr)
-        self.cve_ch_fetch_limit = 5_000 # Default and maximum by NVD
+        self.cve_ch_fetch_limit = 5_000  # Default and maximum by NVD
         self.__cpes = partial(get, config.nvd_cpe_api, headers=api_key_hdr)
-        self.cpes_fetch_limit = 10_000 # Default and maximum by NVD
+        self.cpes_fetch_limit = 10_000  # Default and maximum by NVD
         self.__cpe_mc = partial(get, config.nvd_cpe_mc_api, headers=api_key_hdr)
-        self.cpe_mc_fetch_limit = 500 # Default and maximum by NVD
+        self.cpe_mc_fetch_limit = 500  # Default and maximum by NVD
         self.retries = config.conn_retries
-        self.retry_delay = config.conn_retry_delay # seconds
+        self.retry_delay = config.conn_retry_delay  # seconds
         self.retry_mult = config.conn_retry_delay_mult
         self.fetch_delay = 30 / 50 if config.api_key else 30 / 5  # Non-API limited to 5 req / 30 secs, API get 50 reqs
 
@@ -83,9 +83,11 @@ class NVDFetch:
                 return cvss
 
             cves = []
-            find_en_desc = lambda list_search: next((desc["value"] for desc in list_search if desc["lang"] == "en"), "")
-            metrics_flatten = lambda metric: {int_to_ordinal(index): flatten_cvss(metric) for index, metric in
-                                              enumerate(metric, start=1)}
+
+            def find_en_desc(list_search): return next((desc["value"] for desc in list_search
+                                                        if desc["lang"] == "en"), "")
+            def metrics_flatten(metric): return {int_to_ordinal(index): flatten_cvss(metric) for index, metric
+                                                 in enumerate(metric, start=1)}
             for cve in res_cves:
                 cve = cve["cve"]
 
@@ -93,7 +95,7 @@ class NVDFetch:
                 metrics_v3: dict[str, Any] | None = None
                 metrics_v31: dict[str, Any] | None = None
                 metrics_v4: dict[str, Any] | None = None
-                metrics : dict[str, Any] | None
+                metrics: dict[str, Any] | None
                 if metrics := cve.get("metrics"):
                     if v2 := metrics.get("cvssMetricV2"):
                         metrics_v2 = metrics_flatten(v2)
@@ -134,7 +136,7 @@ class NVDFetch:
                 })
             return cves
         params = self.prep_params(self.cves_fetch_limit, kwargs)
-        fetch = lambda: self.ensure_connection(self.__cves(params=params)).json()
+        def fetch(): return self.ensure_connection(self.__cves(params=params)).json()
 
         results = serialize_cves((curr_res := fetch())["vulnerabilities"])
         while curr_res["totalResults"] > (curr_res["startIndex"] + curr_res["resultsPerPage"]):
