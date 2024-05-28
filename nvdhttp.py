@@ -6,7 +6,7 @@ from typing import Any
 
 from requests import get, HTTPError, PreparedRequest, Response, Session
 
-from utils import snake_to_camel
+from utils import camel_to_snake, snake_to_camel, int_to_ordinal
 from vaultconfig import VaultConfig
 
 
@@ -73,13 +73,72 @@ class NVDFetch:
         :param kwargs: Optional query parameters to pass to NVD API.
         :return: List of CVEs in a dictionary form.
         """
+        def serialize_cves(res_cves: list[dict[str, dict[str, Any]]]) -> list[dict[str, Any]]:
+            def flatten_cvss(metric: dict[str, Any]) -> dict[str, Any] | None:
+                if not metric:
+                    return None
+
+                cvss = {camel_to_snake(k): v for k, v in metric.items() if k not in ("cvssData", "type")}
+                cvss.update({camel_to_snake(k): v for k, v in metric["cvssData"].items() if k != "version"})
+                return cvss
+
+            cves = []
+            find_en_desc = lambda list_search: next((desc["value"] for desc in list_search if desc["lang"] == "en"), "")
+            metrics_flatten = lambda metric: {int_to_ordinal(index): flatten_cvss(metric) for index, metric in
+                                              enumerate(metric, start=1)}
+            for cve in res_cves:
+                cve = cve["cve"]
+
+                metrics_v2: dict[str, Any] | None = None
+                metrics_v3: dict[str, Any] | None = None
+                metrics_v31: dict[str, Any] | None = None
+                metrics_v4: dict[str, Any] | None = None
+                metrics : dict[str, Any] | None
+                if metrics := cve.get("metrics"):
+                    if v2 := metrics.get("cvssMetricV2"):
+                        metrics_v2 = metrics_flatten(v2)
+                    if v3 := metrics.get("cvssMetricV30"):
+                        metrics_v3 = metrics_flatten(v3)
+                    if v31 := metrics.get("cvssMetricV31"):
+                        metrics_v31 = metrics_flatten(v31)
+                    if v40 := metrics.get("cvssMetricV40"):
+                        metrics_v4 = metrics_flatten(v40)
+
+                cwes: dict[str, Any] | None = None
+                if weaknesses := cve.get("weaknesses"):
+                    cwes = {int_to_ordinal(index): find_en_desc(cwe["description"]) for index, cwe in
+                            enumerate(weaknesses, start=1)}
+
+                references: dict[str, list[str]] | None = None
+                if refs := cve.get("references"):
+                    references = {}
+                    for ref in refs:
+                        if ref["source"] not in references:
+                            references[ref["source"]] = [ref["url"]]
+                        else:
+                            references[ref["source"]].append(ref["url"])
+
+                cves.append({
+                    "_id": cve["id"],
+                    "status": cve["vulnStatus"],
+                    "published": cve["published"],
+                    "last_modified": cve["lastModified"],
+                    "description": find_en_desc(cve["descriptions"]),
+                    "metrics_v20": metrics_v2,
+                    "metrics_v30": metrics_v3,
+                    "metrics_v31": metrics_v31,
+                    "metrics_v40": metrics_v4,
+                    "configurations": cve["configurations"],
+                    "cwes": cwes,
+                    "references": references
+                })
+            return cves
         params = self.prep_params(self.cves_fetch_limit, kwargs)
         fetch = lambda: self.ensure_connection(self.__cves(params=params)).json()
-        delayer_cve = partial(map, lambda list_elm : list_elm["cve"])
 
-        results = list(delayer_cve((curr_res := fetch())["vulnerabilities"]))
+        results = serialize_cves((curr_res := fetch())["vulnerabilities"])
         while curr_res["totalResults"] > (curr_res["startIndex"] + curr_res["resultsPerPage"]):
             sleep(self.fetch_delay)
             params.update({"startIndex": curr_res["startIndex"] + curr_res["resultsPerPage"]})
-            results.extend(delayer_cve((curr_res := fetch())["vulnerabilities"]))
+            results.extend(serialize_cves((curr_res := fetch())["vulnerabilities"]))
         return results
