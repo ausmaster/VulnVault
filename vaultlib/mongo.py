@@ -8,6 +8,9 @@ from .config import VaultConfig
 
 
 class VaultMongoClient(MongoClient):
+    """
+    A specific MongoClient dedicated to working with VaultConfig.
+    """
     def __init__(self, config: VaultConfig) -> None:
         super().__init__(f"mongodb://{config.mongo_host}/nvd", config.mongo_port)
         self.cves: Collection = self.get_default_database().cves
@@ -22,6 +25,6 @@ class VaultMongoClient(MongoClient):
         """
         try:
             self.server_info()
-        except ConnectionFailure:
-            raise ConnectionFailure(exception_str)
+        except ConnectionFailure as exc:
+            raise ConnectionFailure(exception_str) from exc
         return self

@@ -1,10 +1,14 @@
+from dataclasses import dataclass
 from json import load
 from pathlib import Path
 
 from .utils import camel_to_snake
 
 
-class VaultConfig:
+class VaultConfig:  # pylint: disable=too-many-instance-attributes
+    """
+    Configuration of VulnVault.
+    """
     def __init__(self, config_path: str = "config.json") -> None:
         # All config values have a default value and can be overridden via config.json file
         # NVD CVE API Endpoint
@@ -33,15 +37,16 @@ class VaultConfig:
         # overrides instance variable if exists
         if (config_path := Path(config_path)).exists():
             g_vars = dir(self)
-            for config_key, config_value in load(open(config_path, "r")).items():
-                config_key = camel_to_snake(config_key)
-                if config_key not in g_vars:
-                    continue
+            with open(config_path, "r", encoding="utf-8") as config_file:
+                for config_key, config_value in load(config_file).items():
+                    config_key = camel_to_snake(config_key)
+                    if config_key not in g_vars:
+                        continue
 
-                if (g_var_type := type(getattr(self, config_key))) is not str:
-                    setattr(self, config_key, g_var_type(config_value))
-                else:
-                    setattr(self, config_key, config_value)
+                    if (g_var_type := type(getattr(self, config_key))) is not str:
+                        setattr(self, config_key, g_var_type(config_value))
+                    else:
+                        setattr(self, config_key, config_value)
 
     def __repr__(self) -> str:
         return f"VaultConfig({vars(self)})"
