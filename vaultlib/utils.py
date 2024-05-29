@@ -1,3 +1,15 @@
+class BColors:
+    HEADER = "\033[95m"
+    OKBLUE = "\033[94m"
+    OKCYAN = "\033[96m"
+    OKGREEN = "\033[92m"
+    WARNING = "\033[93m"
+    FAIL = "\033[91m"
+    ENDC = "\033[0m"
+    BOLD = "\033[1m"
+    UNDERLINE = "\033[4m"
+
+
 def camel_to_snake(cc_str: str) -> str:
     if not cc_str:
         return ""
@@ -10,9 +22,10 @@ def camel_to_snake(cc_str: str) -> str:
 
     return "".join(result)
 
+
 def snake_to_camel(s_str: str) -> str:
-    words = s_str.split('_')
-    return words[0] + "".join(word.capitalize() for word in words[1:])
+    words = s_str.split("_")
+    return f"{words[0]}{''.join(word.capitalize() for word in words[1:])}"
 
 
 def int_to_ordinal(n: int) -> str:

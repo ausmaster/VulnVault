@@ -1,7 +1,7 @@
 from json import load
 from pathlib import Path
 
-from utils import camel_to_snake
+from .utils import camel_to_snake
 
 
 class VaultConfig:
@@ -43,5 +43,5 @@ class VaultConfig:
                 else:
                     setattr(self, config_key, config_value)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"VaultConfig({vars(self)})"
