@@ -9,8 +9,8 @@ from typing import Any
 
 from requests import get, HTTPError, PreparedRequest, Response, Session
 
-from .config import VaultConfig
-from .utils import camel_to_snake, snake_to_camel, int_to_ordinal
+from vaultlib.config import VaultConfig
+from vaultlib.utils import camel_to_snake, snake_to_camel, int_to_ordinal
 
 
 class NVDFetch:  # pylint: disable=R0902
@@ -23,7 +23,7 @@ class NVDFetch:  # pylint: disable=R0902
         self.cves_fetch_limit: int = 2_000  # Default and maximum by NVD
         # self.__cve_ch: partial = partial(get, config.nvd_cve_ch_api, headers=api_key_hdr)
         self.cve_ch_fetch_limit: int = 5_000  # Default and maximum by NVD
-        # self.__cpes: partial = partial(get, config.nvd_cpe_api, headers=api_key_hdr)
+        self.__cpes: partial = partial(get, config.nvd_cpe_api, headers=api_key_hdr)
         self.cpes_fetch_limit: int = 10_000  # Default and maximum by NVD
         # self.__cpe_mc: partial = partial(get, config.nvd_cpe_mc_api, headers=api_key_hdr)
         self.cpe_mc_fetch_limit: int = 500  # Default and maximum by NVD
@@ -82,6 +82,26 @@ class NVDFetch:  # pylint: disable=R0902
         if session:
             session.close()
         return response
+
+    @staticmethod
+    def __print_progress_bar(current_index: int, total_results: int) -> None:
+        """
+        Prints a progress bar based on current index.
+
+        :param current_index: Current index out of the total results.
+        :param total_results: Total number of results.
+        :return: None. Progress is printed.
+        """
+        if total_results == 0:
+            print("No progress to show (total results is 0)")
+            return
+
+        percentage = (current_index / total_results) * 100
+        filled_length = int(40 * current_index // total_results)
+        p_bar = "█" * filled_length + '-' * (40 - filled_length)
+        print(f"\rProgress: |{p_bar}| {percentage:.2f}% Complete", end="\r")
+        if current_index == total_results:
+            print()  # Move to the next line when complete
 
     @staticmethod
     def __serialize_cves(res_cves: list[dict[str, dict[str, Any]]]) -> list[dict[str, Any]]:  # pylint: disable=R0914
@@ -173,38 +193,77 @@ class NVDFetch:  # pylint: disable=R0902
             return self.ensure_connection(self.__cves(params=params)).json()
 
         def curr_index() -> int:
-            nonlocal curr_res
             return int(curr_res["startIndex"]) + int(curr_res["resultsPerPage"])
-
-        def print_progress_bar():
-            nonlocal total_results
-            current = curr_index()
-            if total_results == 0:
-                print("No progress to show (total results is 0)")
-                return
-
-            percentage = (current / total_results) * 100
-            filled_length = int(40 * current // total_results)
-            p_bar = "█" * filled_length + '-' * (40 - filled_length)
-            print(f"\rProgress: |{p_bar}| {percentage:.2f}% Complete", end="\r")
-            if current == total_results:
-                print()  # Move to the next line when complete
 
         params = self.prep_params(self.cves_fetch_limit, kwargs)
         results = self.__serialize_cves((curr_res := fetch())["vulnerabilities"])
         try:
             total_results = int(curr_res["totalResults"])
-            print_progress_bar()
+            self.__print_progress_bar(curr_index(), total_results)
             while curr_res["totalResults"] > (curr_res["startIndex"] + curr_res["resultsPerPage"]):
                 sleep(self.fetch_delay)
                 params.update(
                     {"startIndex": curr_res["startIndex"] + curr_res["resultsPerPage"]})
                 results.extend(
                     self.__serialize_cves((curr_res := fetch())["vulnerabilities"]))
-                print_progress_bar()
+                self.__print_progress_bar(curr_index(), total_results)
         except KeyboardInterrupt:
             print()
             print("Ctrl+C detected. Early returning accumulated CVEs. "
+                  "Use Ctrl+C to completely quit.")
+            return results
+        return results
+
+    @staticmethod
+    def __serialize_cpes(res_cpes: list[dict[str, dict[str, Any]]]) -> list[dict[str, Any]]:  # pylint: disable=R0914
+        """
+        Serializes CPEs to MongoDB digestable form.
+
+        :param res_cpes: List of CPEs returned from API.
+        :return: Serialized list of CPEs.
+
+        """
+        def cpe_to_snake_case(cpe: dict[str, Any]) -> dict[str, Any]:
+            cpe_rtrn = {camel_to_snake(k): v for k, v in cpe.items()
+                        if k not in ("cpeNameId", "titles")}
+            cpe_rtrn["_id"] = cpe["cpeNameId"]
+            cpe_rtrn["title"] = next((title["title"] for title in cpe["titles"]
+                                      if title["lang"] == "en"), "")
+            return cpe_rtrn
+
+        return [cpe_to_snake_case(cpe["cpe"]) for cpe in res_cpes]
+
+    def fetch_cpes(self, **kwargs):
+        """
+        Fetch CVEs from NVD API.
+
+        :param kwargs: Optional query parameters to pass to NVD API.
+        Each parameter on https://nvd.nist.gov/developers/products
+        is supported with caviot being that each parameter needs to be in
+        snake_case instead of camelCase (ex: cpe_name instead of cpeName).
+        :return: List of CVEs in a dictionary form.
+        """
+        def fetch() -> list[dict[str, Any]]:
+            return self.ensure_connection(self.__cpes(params=params)).json()
+
+        def curr_index() -> int:
+            return int(curr_res["startIndex"]) + int(curr_res["resultsPerPage"])
+
+        params = self.prep_params(self.cpes_fetch_limit, kwargs)
+        results = self.__serialize_cpes((curr_res := fetch())["products"])
+        try:
+            total_results = int(curr_res["totalResults"])
+            self.__print_progress_bar(curr_index(), total_results)
+            while curr_res["totalResults"] > (curr_res["startIndex"] + curr_res["resultsPerPage"]):
+                sleep(self.fetch_delay)
+                params.update(
+                    {"startIndex": curr_res["startIndex"] + curr_res["resultsPerPage"]})
+                results.extend(
+                    self.__serialize_cpes((curr_res := fetch())["products"]))
+                self.__print_progress_bar(curr_index(), total_results)
+        except KeyboardInterrupt:
+            print()
+            print("Ctrl+C detected. Early returning accumulated CPEs. "
                   "Use Ctrl+C to completely quit.")
             return results
         return results
