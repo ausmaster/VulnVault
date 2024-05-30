@@ -1,4 +1,12 @@
+"""
+Provides utility classes, functions for the other files.
+"""
+
+
 class BColors:
+    """
+    Provide list of console colors.
+    """
     HEADER = "\033[95m"
     OKBLUE = "\033[94m"
     OKCYAN = "\033[96m"
@@ -9,8 +17,41 @@ class BColors:
     BOLD = "\033[1m"
     UNDERLINE = "\033[4m"
 
+    def success_msg(self, msg: str) -> str:
+        """
+        Provides a console green success message.
+
+        :param msg: Message to turn green.
+        :return: A greenified message.
+        """
+        return f"{self.OKGREEN}{msg}{self.ENDC}"
+
+    def fail_msg(self, msg: str) -> str:
+        """
+        Provides a console red fail message.
+
+        :param msg: Message to turn red.
+        :return: A red message.
+        """
+        return f"{self.FAIL}{msg}{self.ENDC}"
+
+    def underline_msg(self, msg: str) -> str:
+        """
+        Provides a console underlined message.
+
+        :param msg: Message to underline.
+        :return: An underlined message.
+        """
+        return f"{self.UNDERLINE}{msg}{self.ENDC}"
+
 
 def camel_to_snake(cc_str: str) -> str:
+    """
+    Converts a camelCase string to snake_case.
+
+    :param cc_str: camelCase string to convert.
+    :return: snake_cased string.
+    """
     if not cc_str:
         return ""
 
@@ -24,11 +65,21 @@ def camel_to_snake(cc_str: str) -> str:
 
 
 def snake_to_camel(s_str: str) -> str:
+    """
+    Converts a snake_case string to camelCase.
+    :param s_str: snake_case string to convert.
+    :return: camelCased string.
+    """
     words = s_str.split("_")
     return f"{words[0]}{''.join(word.capitalize() for word in words[1:])}"
 
 
 def int_to_ordinal(n: int) -> str:
+    """
+    Converts an integer to an ordinal string.
+    :param n: Integer to convert.
+    :return: Ordinal string.
+    """
     ordinals = {
         1: "primary",
         2: "secondary",

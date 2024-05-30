@@ -1,3 +1,6 @@
+"""
+The universal parser for all future scripts.
+"""
 from argparse import ArgumentParser
 
 

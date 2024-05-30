@@ -1,11 +1,13 @@
-from dataclasses import dataclass
+"""
+This is used to configure VulnVault based on a configuration file.
+"""
 from json import load
 from pathlib import Path
 
 from .utils import camel_to_snake
 
 
-class VaultConfig:  # pylint: disable=too-many-instance-attributes
+class VaultConfig:  # pylint: disable=R0902,R0903
     """
     Configuration of VulnVault.
     """
