@@ -1,3 +1,6 @@
+"""
+Provides Specialized MongoClient that works with VaultConfig.
+"""
 from typing import Self
 
 from pymongo import MongoClient
@@ -15,8 +18,11 @@ class VaultMongoClient(MongoClient):
         super().__init__(f"mongodb://{config.mongo_host}/nvd", config.mongo_port)
         self.cves: Collection = self.get_default_database().cves
 
-    def raise_if_not_connected(self, exception_str: str = "Unable to successfully connect to MongoDB, "
-                                                          "check connectivity and configuration.") -> Self:
+    def raise_if_not_connected(
+            self,
+            exception_str: str = "Unable to successfully connect to MongoDB, "
+                                 "check connectivity and configuration."
+    ) -> Self:
         """
         Ensures conenctivity. Returns self if successful, else raises ConnectionFailure.
 
