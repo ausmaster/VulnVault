@@ -1,6 +1,9 @@
 """
 Provides utility classes, functions for the other files.
 """
+from functools import partial
+
+s_print = partial(print, end=" ")
 
 
 class BColors:
@@ -17,32 +20,65 @@ class BColors:
     BOLD = "\033[1m"
     UNDERLINE = "\033[4m"
 
-    def success_msg(self, msg: str) -> str:
+    @classmethod
+    def success_msg(cls, msg: str) -> str:
         """
         Provides a console green success message.
 
         :param msg: Message to turn green.
         :return: A greenified message.
         """
-        return f"{self.OKGREEN}{msg}{self.ENDC}"
+        return f"{cls.OKGREEN}{msg}{cls.ENDC}"
 
-    def fail_msg(self, msg: str) -> str:
+    @classmethod
+    def fail_msg(cls, msg: str) -> str:
         """
         Provides a console red fail message.
 
         :param msg: Message to turn red.
         :return: A red message.
         """
-        return f"{self.FAIL}{msg}{self.ENDC}"
+        return f"{cls.FAIL}{msg}{cls.ENDC}"
 
-    def underline_msg(self, msg: str) -> str:
+    @classmethod
+    def underline_msg(cls, msg: str) -> str:
         """
         Provides a console underlined message.
 
         :param msg: Message to underline.
         :return: An underlined message.
         """
-        return f"{self.UNDERLINE}{msg}{self.ENDC}"
+        return f"{cls.UNDERLINE}{msg}{cls.ENDC}"
+
+    @classmethod
+    def print_success(cls, msg: str, **kwargs) -> None:
+        """
+        Prints to console a green success message.
+
+        :param msg: Message to turn green and print.
+        :return: None
+        """
+        print(cls.success_msg(msg), **kwargs)
+
+    @classmethod
+    def print_fail(cls, msg: str, **kwargs) -> None:
+        """
+        Prints to console a red fail message.
+
+        :param msg: Message to turn red and print.
+        :return: None
+        """
+        print(cls.fail_msg(msg), **kwargs)
+
+    @classmethod
+    def print_underline(cls, msg: str, **kwargs) -> None:
+        """
+        Prints to console a underlined message.
+
+        :param msg: Message to underline and print.
+        :return: None
+        """
+        print(cls.underline_msg(msg), **kwargs)
 
 
 def camel_to_snake(cc_str: str) -> str:

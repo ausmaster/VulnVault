@@ -74,6 +74,7 @@ class NVDFetch:  # pylint: disable=R0902
 
                 # Retry connection
                 print(f"Warning, retry #{retry}: NVD returned HTTPError. "
+                      f"{f'{err_msg} ' if (err_msg := response.headers.get('message')) else ''}"
                       f"Retrying in {self.fetch_delay} seconds.")
                 sleep(delay)
                 response = session.send(req)
@@ -104,7 +105,7 @@ class NVDFetch:  # pylint: disable=R0902
             print()  # Move to the next line when complete
 
     @staticmethod
-    def __serialize_cves(res_cves: list[dict[str, dict[str, Any]]]) -> list[dict[str, Any]]:  # pylint: disable=R0914
+    def __serialize_cves(res_cves: list[dict[str, dict[str, Any]]]) -> list[dict[str, Any]]:
         """
         Serializes CVEs to MongoDB digestable form.
 
@@ -140,28 +141,28 @@ class NVDFetch:  # pylint: disable=R0902
             metrics_v4: dict[str, Any] | None = None
             metrics: dict[str, Any] | None
             if metrics := cve.get("metrics"):
-                if v2 := metrics.get("cvssMetricV2"):
-                    metrics_v2 = metrics_flatten(v2)
-                if v3 := metrics.get("cvssMetricV30"):
-                    metrics_v3 = metrics_flatten(v3)
-                if v31 := metrics.get("cvssMetricV31"):
-                    metrics_v31 = metrics_flatten(v31)
-                if v40 := metrics.get("cvssMetricV40"):
-                    metrics_v4 = metrics_flatten(v40)
+                if metrics_v2 := metrics.get("cvssMetricV2"):
+                    metrics_v2 = metrics_flatten(metrics_v2)
+                if metrics_v3 := metrics.get("cvssMetricV30"):
+                    metrics_v3 = metrics_flatten(metrics_v3)
+                if metrics_v31 := metrics.get("cvssMetricV31"):
+                    metrics_v31 = metrics_flatten(metrics_v31)
+                if metrics_v4 := metrics.get("cvssMetricV40"):
+                    metrics_v4 = metrics_flatten(metrics_v4)
 
-            cwes: dict[str, Any] | None = None
-            if weaknesses := cve.get("weaknesses"):
-                cwes = {int_to_ordinal(index): find_en_desc(cwe["description"]) for index, cwe in
-                        enumerate(weaknesses, start=1)}
+            cwes: dict[str, Any] | None
+            if cwes := cve.get("weaknesses"):
+                cwes = {int_to_ordinal(index): find_en_desc(_cwe["description"]) for index, _cwe in
+                        enumerate(cwes, start=1)}
 
-            references: dict[str, list[str]] | None = None
-            if refs := cve.get("references"):
-                references = {}
-                for ref in refs:
-                    if ref["source"] not in references:
-                        references[ref["source"]] = [ref["url"]]
+            references: dict[str, list[str]] | None
+            if references := cve.get("references"):
+                refs = {}
+                for ref in references:
+                    if ref["source"] not in refs:
+                        refs[ref["source"]] = [ref["url"]]
                     else:
-                        references[ref["source"]].append(ref["url"])
+                        refs[ref["source"]].append(ref["url"])
 
             cves.append({
                 "_id": cve["id"],
