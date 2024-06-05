@@ -5,12 +5,12 @@ from __future__ import annotations
 
 from functools import partial
 from time import sleep
-from typing import Any
+from typing import Any, Callable
 
 from requests import get, HTTPError, PreparedRequest, Response, Session
 
-from vaultlib.config import VaultConfig
-from vaultlib.utils import camel_to_snake, snake_to_camel, int_to_ordinal
+from .config import VaultConfig
+from .utils import camel_to_snake, snake_to_camel, int_to_ordinal
 
 
 class NVDFetch:  # pylint: disable=R0902
@@ -33,24 +33,7 @@ class NVDFetch:  # pylint: disable=R0902
         # Non-API limited to 5 req / 30 secs, API get 50 reqs
         self.fetch_delay: float = 30 / 50 if config.api_key else 30 / 5
 
-    @staticmethod
-    def prep_params(fetch_limit: int, kwargs: dict[str, Any]) -> dict[str, str]:
-        """
-        Utility to prepoare the query parameters used in the API fetch.
-        Main duty is to convert all kwargs into camelCase for NVD API.
-
-        :param fetch_limit: The specific fetch limit corresponding to the API
-        :param kwargs: All query parameters via kwargs
-        :return: Dict of each parameter in proper camelCase form for key and string for value
-        """
-        params = {snake_to_camel(k): str(v) for k, v in kwargs.items()}
-        if not params.get("startIndex"):
-            params["startIndex"] = "0"
-        if not params.get("resultsPerPage"):
-            params["resultsPerPage"] = str(fetch_limit)
-        return params
-
-    def ensure_connection(self, response: Response) -> Response:
+    def __ensure_connection(self, response: Response) -> Response:
         """
         Ensures that a successful API fetch was made to the NVD API.
         This is needed due to the NVD API throwing 403 Forbiddens
@@ -85,6 +68,23 @@ class NVDFetch:  # pylint: disable=R0902
         return response
 
     @staticmethod
+    def __prep_params(fetch_limit: int, kwargs: dict[str, Any]) -> dict[str, str]:
+        """
+        Utility to prepoare the query parameters used in the API fetch.
+        Main duty is to convert all kwargs into camelCase for NVD API.
+
+        :param fetch_limit: The specific fetch limit corresponding to the API
+        :param kwargs: All query parameters via kwargs
+        :return: Dict of each parameter in proper camelCase form for key and string for value
+        """
+        params = {snake_to_camel(k): str(v) for k, v in kwargs.items()}
+        if not params.get("startIndex"):
+            params["startIndex"] = "0"
+        if not params.get("resultsPerPage"):
+            params["resultsPerPage"] = str(fetch_limit)
+        return params
+
+    @staticmethod
     def __print_progress_bar(current_index: int, total_results: int) -> None:
         """
         Prints a progress bar based on current index.
@@ -103,6 +103,68 @@ class NVDFetch:  # pylint: disable=R0902
         print(f"\rProgress: |{p_bar}| {percentage:.2f}% Complete", end="\r")
         if current_index == total_results:
             print()  # Move to the next line when complete
+
+    def __fetch_collection(
+            self,
+            fetch_func: Callable,
+            fetch_lim: int,
+            data_key: str,
+            serialize_func: Callable,
+            **kwargs
+    ) -> list[dict[str, Any]]:
+        """
+        Generic algorithm to accumulate data from NVD API.
+
+        :param fetch_func: Function used to fetch data from NVD API and return Response.
+        :param fetch_lim: The specific fetch limit for the operation.
+        :param data_key: Key that points to where the data resides in the JSON Response.
+        :param serialize_func: Function used to serialize data from NVD API.
+        :return: List of data, each data is a dictionary
+        """
+        def fetch() -> list[dict[str, Any]]:
+            return self.__ensure_connection(fetch_func(params=params)).json()
+
+        def curr_index() -> int:
+            return int(curr_res["startIndex"]) + int(curr_res["resultsPerPage"])
+
+        params = self.__prep_params(fetch_lim, kwargs)
+        results = serialize_func((curr_res := fetch())[data_key])
+        try:
+            total_results = int(curr_res["totalResults"])
+            self.__print_progress_bar(curr_index(), total_results)
+            while curr_res["totalResults"] > (curr_res["startIndex"] + curr_res["resultsPerPage"]):
+                sleep(self.fetch_delay)
+                params.update(
+                    {"startIndex": curr_res["startIndex"] + curr_res["resultsPerPage"]})
+                results.extend(
+                    serialize_func((curr_res := fetch())[data_key]))
+                self.__print_progress_bar(curr_index(), total_results)
+        except KeyboardInterrupt:
+            print()
+            print("Ctrl+C detected. Early returning accumulated CPEs. "
+                  "Use Ctrl+C to completely quit.")
+            return results
+        return results
+
+    @staticmethod
+    def __serialize_cpes(res_cpes: list[dict[str, dict[str, Any]]]) -> list[dict[str, Any]]:  # pylint: disable=R0914
+        """
+        Serializes CPEs to MongoDB digestable form.
+
+        :param res_cpes: List of CPEs returned from API.
+        :return: Serialized list of CPEs.
+
+        """
+
+        def cpe_to_snake_case(cpe: dict[str, Any]) -> dict[str, Any]:
+            cpe_rtrn = {camel_to_snake(k): v for k, v in cpe.items()
+                        if k not in ("cpeNameId", "titles")}
+            cpe_rtrn["_id"] = cpe["cpeNameId"]
+            cpe_rtrn["title"] = next((title["title"] for title in cpe["titles"]
+                                      if title["lang"] == "en"), "")
+            return cpe_rtrn
+
+        return [cpe_to_snake_case(cpe["cpe"]) for cpe in res_cpes]
 
     @staticmethod
     def __serialize_cves(res_cves: list[dict[str, dict[str, Any]]]) -> list[dict[str, Any]]:
@@ -180,6 +242,24 @@ class NVDFetch:  # pylint: disable=R0902
             })
         return cves
 
+    def fetch_cpes(self, **kwargs) -> list[dict[str, Any]]:
+        """
+        Fetch CPEs from NVD API.
+
+        :param kwargs: Optional query parameters to pass to NVD API.
+        Each parameter on https://nvd.nist.gov/developers/products
+        is supported with caviot being that each parameter needs to be in
+        snake_case instead of camelCase (ex: cpe_name instead of cpeName).
+        :return: List of CPEs in a dictionary form.
+        """
+        return self.__fetch_collection(
+            self.__cpes,
+            self.cpes_fetch_limit,
+            "products",
+            self.__serialize_cpes,
+            **kwargs
+        )
+
     def fetch_cves(self, **kwargs) -> list[dict[str, Any]]:
         """
         Fetch CVEs from NVD API.
@@ -190,81 +270,10 @@ class NVDFetch:  # pylint: disable=R0902
         snake_case instead of camelCase (ex: cpe_name instead of cpeName).
         :return: List of CVEs in a dictionary form.
         """
-        def fetch() -> list[dict[str, Any]]:
-            return self.ensure_connection(self.__cves(params=params)).json()
-
-        def curr_index() -> int:
-            return int(curr_res["startIndex"]) + int(curr_res["resultsPerPage"])
-
-        params = self.prep_params(self.cves_fetch_limit, kwargs)
-        results = self.__serialize_cves((curr_res := fetch())["vulnerabilities"])
-        try:
-            total_results = int(curr_res["totalResults"])
-            self.__print_progress_bar(curr_index(), total_results)
-            while curr_res["totalResults"] > (curr_res["startIndex"] + curr_res["resultsPerPage"]):
-                sleep(self.fetch_delay)
-                params.update(
-                    {"startIndex": curr_res["startIndex"] + curr_res["resultsPerPage"]})
-                results.extend(
-                    self.__serialize_cves((curr_res := fetch())["vulnerabilities"]))
-                self.__print_progress_bar(curr_index(), total_results)
-        except KeyboardInterrupt:
-            print()
-            print("Ctrl+C detected. Early returning accumulated CVEs. "
-                  "Use Ctrl+C to completely quit.")
-            return results
-        return results
-
-    @staticmethod
-    def __serialize_cpes(res_cpes: list[dict[str, dict[str, Any]]]) -> list[dict[str, Any]]:  # pylint: disable=R0914
-        """
-        Serializes CPEs to MongoDB digestable form.
-
-        :param res_cpes: List of CPEs returned from API.
-        :return: Serialized list of CPEs.
-
-        """
-        def cpe_to_snake_case(cpe: dict[str, Any]) -> dict[str, Any]:
-            cpe_rtrn = {camel_to_snake(k): v for k, v in cpe.items()
-                        if k not in ("cpeNameId", "titles")}
-            cpe_rtrn["_id"] = cpe["cpeNameId"]
-            cpe_rtrn["title"] = next((title["title"] for title in cpe["titles"]
-                                      if title["lang"] == "en"), "")
-            return cpe_rtrn
-
-        return [cpe_to_snake_case(cpe["cpe"]) for cpe in res_cpes]
-
-    def fetch_cpes(self, **kwargs):
-        """
-        Fetch CVEs from NVD API.
-
-        :param kwargs: Optional query parameters to pass to NVD API.
-        Each parameter on https://nvd.nist.gov/developers/products
-        is supported with caviot being that each parameter needs to be in
-        snake_case instead of camelCase (ex: cpe_name instead of cpeName).
-        :return: List of CVEs in a dictionary form.
-        """
-        def fetch() -> list[dict[str, Any]]:
-            return self.ensure_connection(self.__cpes(params=params)).json()
-
-        def curr_index() -> int:
-            return int(curr_res["startIndex"]) + int(curr_res["resultsPerPage"])
-
-        params = self.prep_params(self.cpes_fetch_limit, kwargs)
-        results = self.__serialize_cpes((curr_res := fetch())["products"])
-        try:
-            total_results = int(curr_res["totalResults"])
-            self.__print_progress_bar(curr_index(), total_results)
-            while curr_res["totalResults"] > (curr_res["startIndex"] + curr_res["resultsPerPage"]):
-                sleep(self.fetch_delay)
-                params.update(
-                    {"startIndex": curr_res["startIndex"] + curr_res["resultsPerPage"]})
-                results.extend(
-                    self.__serialize_cpes((curr_res := fetch())["products"]))
-                self.__print_progress_bar(curr_index(), total_results)
-        except KeyboardInterrupt:
-            print()
-            print("Ctrl+C detected. Early returning accumulated CPEs. "
-                  "Use Ctrl+C to completely quit.")
-            return results
-        return results
+        return self.__fetch_collection(
+            self.__cves,
+            self.cves_fetch_limit,
+            "vulnerabilities",
+            self.__serialize_cves,
+            **kwargs
+        )
