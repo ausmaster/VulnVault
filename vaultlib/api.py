@@ -340,8 +340,7 @@ class NVDParallelAPICaller:  # pylint: disable=R0902
         with self.lock:
             self.results.extend(result)
             self.completed_calls += 1
-            if self.progress_callback:
-                self.progress_callback(self.completed_calls, self.total_calls)
+            self.progress_callback(self.completed_calls, self.total_calls)
 
     def run(self) -> list[dict[str, Any]]:
         """
