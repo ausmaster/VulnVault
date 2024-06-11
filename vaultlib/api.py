@@ -138,7 +138,7 @@ class NVDFetch:  # pylint: disable=R0902
             data_key,
             self.fetch_threads
         )
-        s_print("Collecting from NVD API...")
+        C.print_bold("Collecting from NVD API")
         results = parallel.run()
         C.print_success("Collection complete.")
         s_print("Serializing results...")
@@ -153,9 +153,7 @@ class NVDFetch:  # pylint: disable=R0902
 
         :param res_cpes: List of CPEs returned from API.
         :return: Serialized list of CPEs.
-
         """
-
         def cpe_to_snake_case(cpe: dict[str, Any]) -> dict[str, Any]:
             cpe_rtrn = {camel_to_snake(k): v for k, v in cpe.items()
                         if k not in ("cpeNameId", "titles")}

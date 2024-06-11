@@ -51,6 +51,16 @@ class BColors:
         return f"{cls.UNDERLINE}{msg}{cls.ENDC}"
 
     @classmethod
+    def bold_msg(cls, msg: str) -> str:
+        """
+        Provides a console bolded message.
+
+        :param msg: Message to bold.
+        :return: An bolded message.
+        """
+        return f"{cls.BOLD}{msg}{cls.ENDC}"
+
+    @classmethod
     def print_success(cls, msg: str, **kwargs) -> None:
         """
         Prints to console a green success message.
@@ -79,6 +89,16 @@ class BColors:
         :return: None
         """
         print(cls.underline_msg(msg), **kwargs)
+
+    @classmethod
+    def print_bold(cls, msg: str, **kwargs) -> None:
+        """
+        Prints to console a bolded message.
+
+        :param msg: Message to bold and print.
+        :return: None
+        """
+        print(cls.bold_msg(msg), **kwargs)
 
 
 def camel_to_snake(cc_str: str) -> str:

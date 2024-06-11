@@ -56,8 +56,12 @@ def insert_cpes(drop: bool = False, **kwargs) -> None:
     if drop:
         drop_cpes()
     C.print_underline("Starting Collection and Insertion Procedure for CPEs")
-    VAULT_MONGO.cpes.insert_many(NVD_API.fetch_cpes(**kwargs))
-    C.print_success("Complete.")
+    s_print("Inserting CPEs...")
+    cpes = NVD_API.fetch_cpes(**kwargs)
+    C.print_success("Collection complete.")
+    s_print("Inserting CPEs...")
+    VAULT_MONGO.cpes.insert_many(cpes)
+    C.print_success("Collection and Insertion Complete.")
 
 
 def drop_cpes() -> None:
@@ -95,8 +99,11 @@ def insert_cves(drop: bool = False, **kwargs) -> None:
     if drop:
         drop_cves()
     C.print_underline("Starting Collection and Insertion Procedure for CVEs")
-    VAULT_MONGO.cves.insert_many(NVD_API.fetch_cves(**kwargs))
-    C.print_success("Complete.")
+    cves = NVD_API.fetch_cves(**kwargs)
+    C.print_success("Collection complete.")
+    s_print("Inserting CVEs...")
+    VAULT_MONGO.cves.insert_many(cves)
+    C.print_success("Collection and Insertion Complete.")
 
 
 def drop_cves() -> None:
