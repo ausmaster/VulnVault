@@ -20,7 +20,11 @@ def update_metadata(collection: str, datetime: Datetime) -> None:
 
     :return: None
     """
-    VAULT_MONGO.meta.update_one({"collection": collection}, {"$set": {"updated": datetime}})
+    VAULT_MONGO.meta.update_one(
+        {"collection": collection},
+        {"$set": {"updated": datetime}},
+        upsert=True
+    )
 
 
 def drop_metadata() -> None:
@@ -32,24 +36,24 @@ def drop_metadata() -> None:
     VAULT_MONGO.db.drop_collection("metadata")
 
 
-def initial_load() -> None:
+def initial_load(now: Datetime) -> None:
     """
     Provides the initial procedure of loading all CVEs and CPEs from NVD.
 
     :return: None
     """
-    now = Datetime.now()
     drop_metadata()
-    insert_cpes(drop=True)
+    insert_cpes(now, drop=True)
     update_metadata("cpes", now)
-    insert_cves(drop=True)
+    insert_cves(now, drop=True)
     update_metadata("cves", now)
 
 
-def insert_cpes(drop: bool = False, **kwargs) -> None:
+def insert_cpes(now: Datetime, drop: bool = False, **kwargs) -> None:
     """
     Insert procudure for inserting CPEs.
 
+    :param now: DateTime now
     :param drop: Drop collection before inserting CPEs.
     :return: None
     """
@@ -62,6 +66,7 @@ def insert_cpes(drop: bool = False, **kwargs) -> None:
     s_print("Inserting CPEs...")
     VAULT_MONGO.cpes.insert_many(cpes)
     C.print_success("Collection and Insertion Complete.")
+    update_metadata("cpes", now)
 
 
 def drop_cpes() -> None:
@@ -75,10 +80,11 @@ def drop_cpes() -> None:
     C.print_success("Dropped.")
 
 
-def update_cpes(**kwargs) -> None:
+def update_cpes(now: Datetime, **kwargs) -> None:
     """
     Procedure for updating CPEs in CPE collection.
 
+    :param now: DateTime now
     :return: None
     """
     C.print_underline("Updating CPEs collection")
@@ -87,12 +93,14 @@ def update_cpes(**kwargs) -> None:
     )
     C.print_success(f"{f'{counts.inserted_count} CPEs Inserted. ' if counts.inserted_count else ''}"
                     f"{counts.modified_count} CPEs Updated.")
+    update_metadata("cpes", now)
 
 
-def insert_cves(drop: bool = False, **kwargs) -> None:
+def insert_cves(now: Datetime, drop: bool = False, **kwargs) -> None:
     """
     Insert procudure for inserting CVEs.
 
+    :param now: DateTime now
     :param drop: Drop collection before inserting CVEs.
     :return: None
     """
@@ -104,6 +112,7 @@ def insert_cves(drop: bool = False, **kwargs) -> None:
     s_print("Inserting CVEs...")
     VAULT_MONGO.cves.insert_many(cves)
     C.print_success("Collection and Insertion Complete.")
+    update_metadata("cves", now)
 
 
 def drop_cves() -> None:
@@ -117,10 +126,11 @@ def drop_cves() -> None:
     C.print_success("Dropped.")
 
 
-def update_cves(**kwargs) -> None:
+def update_cves(now: Datetime, **kwargs) -> None:
     """
     Procedure for updating CPEs in CPE collection.
 
+    :param now: DateTime now
     :return: None
     """
     C.print_underline("Updating CVEs collection")
@@ -129,6 +139,7 @@ def update_cves(**kwargs) -> None:
     )
     C.print_success(f"{f'{counts.inserted_count} CVEs Inserted. ' if counts.inserted_count else ''}"
                     f"{counts.modified_count} CVEs Updated.")
+    update_metadata("cves", now)
 
 
 if __name__ == "__main__":
@@ -166,17 +177,18 @@ if __name__ == "__main__":
     C.print_success("Connected.")
     NVD_API = NVDFetch(config)
 
+    d_now = Datetime.now()
     if args.init:
-        initial_load()
+        initial_load(d_now)
     elif args.cpefetch:
-        insert_cpes(drop=args.purge, **api_options)
+        insert_cpes(d_now, drop=args.purge, **api_options)
     elif args.cvefetch:
-        insert_cves(drop=args.purge, **api_options)
+        insert_cves(d_now, drop=args.purge, **api_options)
     elif args.dropcpe:
         drop_cpes()
     elif args.dropcve:
         drop_cves()
     elif args.updatecpe:
-        update_cpes(**api_options)
-    # elif args.updatecve:
-    #     update_cves()
+        update_cpes(d_now, **api_options)
+    elif args.updatecve:
+        update_cves(d_now, **api_options)

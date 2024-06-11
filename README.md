@@ -7,7 +7,8 @@ This solves this by storing a replica of NVD's CVE and CPE information in a Mong
 
 Requires Python 3.8+
 ## Usage
-By default, VulnVault will attempt to load a JSON configuration file located in the running directory called "config.json".
+By default, VulnVault will attempt to load a JSON configuration file located in the running directory called "config.json" 
+(if it exists, else will use default values).
 This can changed with the `-c` or `--config` command option with the path to the configuration file. 
 All values in configuration file will override the default values. 
 Below are the available options for the configuration file.
