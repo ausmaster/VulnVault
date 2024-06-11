@@ -5,6 +5,7 @@ For commercial usage, this is an issue when there are multiple users requesting 
 
 This solves this by storing a replica of NVD's CVE and CPE information in a MongoDB database.
 
+Requires Python 3.8+
 ## Usage
 By default, VulnVault will attempt to load a configuration file located in the running directory called "config.json".
 This can changed with the `-c` or `--config` command option with the path to the configuration file.
