@@ -7,8 +7,37 @@ This solves this by storing a replica of NVD's CVE and CPE information in a Mong
 
 Requires Python 3.8+
 ## Usage
-By default, VulnVault will attempt to load a configuration file located in the running directory called "config.json".
-This can changed with the `-c` or `--config` command option with the path to the configuration file.
+By default, VulnVault will attempt to load a JSON configuration file located in the running directory called "config.json".
+This can changed with the `-c` or `--config` command option with the path to the configuration file. 
+All values in configuration file will override the default values. 
+Below are the available options for the configuration file.
+### config.json Options (defaults)
+```JSON
+{
+  "nvdCveApi": "https://services.nvd.nist.gov/rest/json/cves/2.0",
+  "nvdCveChApi": "https://services.nvd.nist.gov/rest/json/cvehistory/2.0",
+  "nvdCpeApi": "https://services.nvd.nist.gov/rest/json/cpes/2.0",
+  "nvdCpeMcApi": "https://services.nvd.nist.gov/rest/json/cpematch/2.0",
+  "apiKey": "",
+  "mongoHost": "localhost",
+  "mongoPort": 27017,
+  "connRetries": 3,
+  "connRetryDelay": 10,
+  "connRetryDelayMult": 3,
+  "fetchThreads": 3
+}
+```
+- nvdCveApi: NVD CVE API Endpoint
+- nvdCveChApi: NVD CVE Change History API Endpoint
+- nvdCpeApi: NVD CPE API Endpoint
+- nvdCpeMcApi: NVD CPE Match Criteria API
+- apiKey: NVD API Key
+- mongoHost: MongoDB Docker Container Hostname
+- mongoPort: MongoDB Docker Container Port
+- connRetries: Connection Retry Limit
+- connRetryDelay: Connection Retry Initial Sleep Duration in seconds
+- connRetryDelayMult: Connection Retry Sleep Duration Multiplier. Ex: 10 secs - 1st retry 10 secs - 2nd retry 30 secs - 3rd retry 90 secs
+- fetchThreads: Number of threads used to fetch API data
 
 ### Options
 ```
