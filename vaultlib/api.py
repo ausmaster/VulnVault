@@ -3,14 +3,18 @@ Performs the NVD API fetches and returns digestable results.
 """
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from copy import deepcopy
 from functools import partial
-from time import sleep
+from threading import Lock
+from time import time, sleep
 from typing import Any, Callable
 
 from requests import get, HTTPError, PreparedRequest, Response, Session
 
 from .config import VaultConfig
-from .utils import camel_to_snake, snake_to_camel, int_to_ordinal
+from .utils import BColors as C
+from .utils import camel_to_snake, snake_to_camel, int_to_ordinal, s_print
 
 
 class NVDFetch:  # pylint: disable=R0902
@@ -32,6 +36,7 @@ class NVDFetch:  # pylint: disable=R0902
         self.retry_mult: int = config.conn_retry_delay_mult
         # Non-API limited to 5 req / 30 secs, API get 50 reqs
         self.fetch_delay: float = 30 / 50 if config.api_key else 30 / 5
+        self.fetch_threads: int = config.fetch_threads
 
     def __ensure_connection(self, response: Response) -> Response:
         """
@@ -55,13 +60,13 @@ class NVDFetch:  # pylint: disable=R0902
                 if not session:
                     session = Session()
 
+                delay *= self.retry_mult
                 # Retry connection
                 print(f"Warning, retry #{retry}: NVD returned HTTPError. "
                       f"{f'{err_msg} ' if (err_msg := response.headers.get('message')) else ''}"
                       f"Retrying in {self.fetch_delay} seconds.")
                 sleep(delay)
                 response = session.send(req)
-                delay *= self.retry_mult
                 continue
         if session:
             session.close()
@@ -121,29 +126,24 @@ class NVDFetch:  # pylint: disable=R0902
         :param serialize_func: Function used to serialize data from NVD API.
         :return: List of data, each data is a dictionary
         """
-        def fetch() -> list[dict[str, Any]]:
-            return self.__ensure_connection(fetch_func(params=params)).json()
-
-        def curr_index() -> int:
-            return int(curr_res["startIndex"]) + int(curr_res["resultsPerPage"])
+        def fetch(f_params: dict[str, str]) -> dict[str, Any]:
+            return self.__ensure_connection(fetch_func(params=f_params)).json()
 
         params = self.__prep_params(fetch_lim, kwargs)
-        results = serialize_func((curr_res := fetch())[data_key])
-        try:
-            total_results = int(curr_res["totalResults"])
-            self.__print_progress_bar(curr_index(), total_results)
-            while curr_res["totalResults"] > (curr_res["startIndex"] + curr_res["resultsPerPage"]):
-                sleep(self.fetch_delay)
-                params.update(
-                    {"startIndex": curr_res["startIndex"] + curr_res["resultsPerPage"]})
-                results.extend(
-                    serialize_func((curr_res := fetch())[data_key]))
-                self.__print_progress_bar(curr_index(), total_results)
-        except KeyboardInterrupt:
-            print()
-            print("Ctrl+C detected. Early returning accumulated CPEs. "
-                  "Use Ctrl+C to completely quit.")
-            return results
+        parallel = NVDParallelAPICaller(
+            self.fetch_delay,
+            self.__print_progress_bar,
+            fetch,
+            params,
+            data_key,
+            self.fetch_threads
+        )
+        s_print("Collecting from NVD API...")
+        results = parallel.run()
+        C.print_success("Collection complete.")
+        s_print("Serializing results...")
+        results = serialize_func(results)
+        C.print_success("Serialization complete.")
         return results
 
     @staticmethod
@@ -277,3 +277,82 @@ class NVDFetch:  # pylint: disable=R0902
             self.__serialize_cves,
             **kwargs
         )
+
+
+class NVDParallelAPICaller:  # pylint: disable=R0902
+    """
+    Introduces parallelism for API calls to NVD.
+    """
+    def __init__(  # pylint: disable=R0913
+            self,
+            delay: float,
+            progress_callback: Callable[[int, int], None],
+            api_call: Callable[[dict[str, str]], dict[str, Any]],
+            params: dict[str, Any],
+            data_key: str,
+            max_workers: int
+    ) -> None:
+        self.lock = Lock()
+        self.delay = delay
+        self.data_key = data_key
+        self.results: list[dict[str, Any]] = []
+        self.max_workers = max_workers
+        self.progress_callback = progress_callback
+        self.last_call_time = 0
+        self.total_calls = 0
+        self.completed_calls = 0
+
+        api_resp = api_call(params)
+        self.calls: list[partial] = []
+        for curr_index in range(
+                api_resp["startIndex"] + api_resp["resultsPerPage"],
+                api_resp["totalResults"],
+                api_resp["resultsPerPage"]
+        ):
+            curr_params = deepcopy(params)
+            curr_params["startIndex"] = curr_index
+            self.calls.append(partial(api_call, curr_params))
+        self.total_calls = len(self.calls)
+        self.results.extend(api_resp[data_key])
+
+    def fetch_api(self, api_call: partial) -> list[dict[str, Any]]:
+        """
+        Used by executor to fetch one API call per worker.
+        Capped by the delay to stay within NVD API limit.
+
+        :param api_call: The API call to execute for this worker.
+        :return: Results of API call, specified by self.data_key.
+        """
+        with self.lock:
+            current_time = time()
+            while current_time - self.last_call_time < self.delay:
+                sleep(self.delay - (current_time - self.last_call_time))
+                current_time = time()
+            self.last_call_time = current_time
+        return api_call()[self.data_key]
+
+    def worker(self, api_call: partial) -> None:
+        """
+        Actual worker task. Calls self.fetch_api -> Results -> self.results -> print progress bar
+
+        :param api_call: The API call to execute for this worker.
+        :return: None
+        """
+        result = self.fetch_api(api_call)
+        with self.lock:
+            self.results.extend(result)
+            self.completed_calls += 1
+            if self.progress_callback:
+                self.progress_callback(self.completed_calls, self.total_calls)
+
+    def run(self) -> list[dict[str, Any]]:
+        """
+        Runs the Parallel API fetching process.
+
+        :return: All results of API fetch.
+        """
+        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            future_to_call = {executor.submit(self.worker, call): call for call in self.calls}
+            for future in as_completed(future_to_call):
+                future.result()  # Ensure that all futures are processed
+        return self.results

@@ -105,7 +105,7 @@ def drop_cves() -> None:
 
     :return: None
     """
-    s_print("Dropping CVEs collection")
+    s_print("Dropping CVEs collection...")
     VAULT_MONGO.db.drop_collection("cves")
     C.print_success("Dropped.")
 

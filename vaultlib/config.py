@@ -34,6 +34,8 @@ class VaultConfig:  # pylint: disable=R0902,R0903
         # Connection Retry Sleep Duration Multiplier
         # Ex: 10 secs - 1st retry 10 secs - 2nd retry 30 secs - 3rd retry 90 secs
         self.conn_retry_delay_mult: int = 3
+        # Number of threads used to fetch API data
+        self.fetch_threads: int = 3
 
         # All Config values from config.json are converted from camelCase to snake_case
         # overrides instance variable if exists
