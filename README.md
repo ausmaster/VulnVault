@@ -36,7 +36,7 @@ Below are the available options for the configuration file.
 - mongoPort: MongoDB Docker Container Port
 - connRetries: Connection Retry Limit
 - connRetryDelay: Connection Retry Initial Sleep Duration in seconds
-- connRetryDelayMult: Connection Retry Sleep Duration Multiplier. Ex: 10 secs - 1st retry 10 secs - 2nd retry 30 secs - 3rd retry 90 secs
+- connRetryDelayMult: Connection Retry Sleep Duration Multiplier. Ex: 10 secs w/ 3 mult - 1st retry 30 secs - 2nd retry 90 secs - 3rd retry 270 secs
 - fetchThreads: Number of threads used to fetch API data
 
 ### Options
