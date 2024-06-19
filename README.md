@@ -6,6 +6,9 @@ For commercial usage, this is an issue when there are multiple users requesting 
 This solves this by storing a replica of NVD's CVE and CPE information in a MongoDB database.
 
 Requires Python 3.8+
+## Features
+### In Progress
+* Machine Learning to obtain CPEs (and CVEs) from SBOM entries.
 ## Usage
 By default, VulnVault will attempt to load a JSON configuration file located in the running directory called "config.json" 
 (if it exists, else will use default values).
