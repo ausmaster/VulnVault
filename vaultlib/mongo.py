@@ -1,6 +1,8 @@
 """
 Provides Specialized MongoClient that works with VaultConfig.
 """
+from __future__ import annotations
+
 from typing import Self
 
 from pymongo import MongoClient
@@ -8,6 +10,7 @@ from pymongo.collection import Collection
 from pymongo.database import Database
 from pymongo.errors import ConnectionFailure
 
+from .api import CPESchema, CVESchema
 from .config import VaultConfig
 
 
@@ -19,8 +22,8 @@ class VaultMongoClient(MongoClient):
         super().__init__(f"mongodb://{config.mongo_host}/nvd", config.mongo_port)
         self.db: Database = self.get_default_database()
         self.meta: Collection = self.db.metadata
-        self.cpes: Collection = self.db.cpes
-        self.cves: Collection = self.db.cves
+        self.cpes: Collection[CPESchema] = self.db.cpes
+        self.cves: Collection[CVESchema] = self.db.cves
 
     def raise_if_not_connected(
             self,
@@ -38,3 +41,6 @@ class VaultMongoClient(MongoClient):
         except ConnectionFailure as err:
             raise ConnectionFailure(exception_str) from err
         return self
+
+
+VAULT_MONGO: VaultMongoClient | None = None

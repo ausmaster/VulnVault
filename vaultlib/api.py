@@ -3,18 +3,89 @@ Performs the NVD API fetches and returns digestable results.
 """
 from __future__ import annotations
 
+from collections import namedtuple
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from copy import deepcopy
 from functools import partial
+from re import split
 from threading import Lock
 from time import time, sleep
-from typing import Any, Callable
+from typing import Any, Callable, TypedDict
 
 from requests import get, HTTPError, PreparedRequest, Response, Session
 
 from .config import VaultConfig
 from .utils import BColors as C
 from .utils import camel_to_snake, snake_to_camel, int_to_ordinal, s_print
+
+
+class CVESchema(TypedDict):
+    """
+    Schema for CVE records in the cves MongoDB collection.
+    """
+    description: str
+    published: str
+    last_modified: str
+    status: str
+    metrics_v20: dict[str, dict[str, Any]]
+    metrics_v30: dict[str, dict[str, Any]]
+    metrics_v31: dict[str, dict[str, Any]]
+    metrics_v40: dict[str, dict[str, Any]]
+    configurations: list[dict[str, Any]]
+    references: list[dict[str, Any]]
+    cwes: list[dict[str, Any]]
+
+
+class CPESchema(TypedDict, total=False):
+    """
+    Schema for CPE records in the cpes MongoDB collection.
+    """
+    cpe_name: str
+    created: str
+    last_modified: str
+    title: str
+    deprecated: bool
+    # The part type (e.g., 'a' for applications, 'o' for operating systems, 'h' for hardware)
+    part: str
+    vendor: str  # The vendor of the product
+    product: str  # The product name
+    version: str  # The version of the product
+    update: str  # The update level of the product
+    edition: str  # The edition of the product
+    language: str  # The language of the product
+    sw_edition: str  # The software edition
+    target_sw: str  # The software environment targeted by the product
+    target_hw: str  # The hardware environment targeted by the product
+    other: str  # Any other information
+
+
+CPEComponents = namedtuple(
+    "CPEComponents",
+    (
+        "cpe",
+        "cpe_version",
+        "part",
+        "vendor",
+        "product",
+        "version",
+        "update",
+        "edition",
+        "language",
+        "sw_edition",
+        "target_sw",
+        "target_hw",
+        "other"
+    ),
+    defaults=(
+        "*",
+        "*",
+        "*",
+        "*",
+        "*",
+        "*",
+        "*"
+    )
+)
 
 
 class NVDFetch:  # pylint: disable=R0902
@@ -105,7 +176,7 @@ class NVDFetch:  # pylint: disable=R0902
         percentage = (current_index / total_results) * 100
         filled_length = int(40 * current_index // total_results)
         p_bar = "█" * filled_length + '-' * (40 - filled_length)
-        print(f"\rProgress: |{p_bar}| {percentage:.2f}% Complete", end="\r")
+        print(f"\rProgress: |{p_bar}| {percentage:.2f}% Complete", end="\r", flush=True)
         if current_index == total_results:
             print()  # Move to the next line when complete
 
@@ -138,7 +209,7 @@ class NVDFetch:  # pylint: disable=R0902
             data_key,
             self.fetch_threads
         )
-        C.print_bold("Collecting from NVD API")
+        C.print_bold("Collecting from NVD API", flush=True)
         results = parallel.run()
         C.print_success("Collection complete.")
         s_print("Serializing results...")
@@ -154,15 +225,31 @@ class NVDFetch:  # pylint: disable=R0902
         :param res_cpes: List of CPEs returned from API.
         :return: Serialized list of CPEs.
         """
-        def cpe_to_snake_case(cpe: dict[str, Any]) -> dict[str, Any]:
-            cpe_rtrn = {camel_to_snake(k): v for k, v in cpe.items()
+        def cpe_to_snake_case(_cpe: dict[str, Any]) -> dict[str, Any]:
+            cpe_rtrn = {camel_to_snake(k): v for k, v in _cpe.items()
                         if k not in ("cpeNameId", "titles")}
-            cpe_rtrn["_id"] = cpe["cpeNameId"]
-            cpe_rtrn["title"] = next((title["title"] for title in cpe["titles"]
+            cpe_rtrn["_id"] = _cpe["cpeNameId"]
+            cpe_rtrn["title"] = next((title["title"] for title in _cpe["titles"]
                                       if title["lang"] == "en"), "")
             return cpe_rtrn
 
-        return [cpe_to_snake_case(cpe["cpe"]) for cpe in res_cpes]
+        def split_cpe_name(cpe_name: str) -> list[str]:
+            return [
+                part.replace("\\:", ":")
+                for part in split(r"(?<!\\):", cpe_name)
+            ]
+
+        cpes: list[dict[str, Any]] = []
+        for cpe in res_cpes:
+            cpe = cpe_to_snake_case(cpe["cpe"])
+            cpe.update({
+                k: v for k, v in
+                CPEComponents(*split_cpe_name(cpe["cpe_name"]))._asdict().items()
+                if k not in ("cpe", "cpe_version")
+            })
+            cpes.append(cpe)
+
+        return cpes
 
     @staticmethod
     def __serialize_cves(res_cves: list[dict[str, dict[str, Any]]]) -> list[dict[str, Any]]:

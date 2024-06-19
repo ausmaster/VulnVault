@@ -25,7 +25,8 @@ Below are the available options for the configuration file.
   "connRetries": 3,
   "connRetryDelay": 10,
   "connRetryDelayMult": 3,
-  "fetchThreads": 3
+  "fetchThreads": 3,
+  "punktUrl": "punkt"
 }
 ```
 - nvdCveApi: NVD CVE API Endpoint
@@ -39,6 +40,7 @@ Below are the available options for the configuration file.
 - connRetryDelay: Connection Retry Initial Sleep Duration in seconds
 - connRetryDelayMult: Connection Retry Sleep Duration Multiplier. Ex: 10 secs w/ 3 mult - 1st retry 30 secs - 2nd retry 90 secs - 3rd retry 270 secs
 - fetchThreads: Number of threads used to fetch API data
+- punktUrl: URL to fetch NLTK "Punkt" pre-trained model, defaults to their repository
 
 ### Options
 ```

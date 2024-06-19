@@ -1,2 +1,4 @@
 pymongo~=4.7.2
 requests~=2.32.2
+nltk~=3.8.1
+rapidfuzz~=3.9.3

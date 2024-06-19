@@ -36,6 +36,8 @@ class VaultConfig:  # pylint: disable=R0902,R0903
         self.conn_retry_delay_mult: int = 3
         # Number of threads used to fetch API data
         self.fetch_threads: int = 3
+        # NLTK "Punkt" Pre-trained model URL
+        self.punkt_url = "punkt"
 
         # All Config values from config.json are converted from camelCase to snake_case
         # overrides instance variable if exists

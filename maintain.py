@@ -7,11 +7,17 @@ from datetime import datetime as Datetime
 from pymongo import ReplaceOne
 
 # pylint: disable=E0401,E0611
-from vaultlib import NVDFetch, VaultArgumentParser, VaultConfig, VaultMongoClient, s_print
+from vaultlib import (
+    NVDFetch,
+    VaultArgumentParser,
+    VaultConfig,
+    VaultMongoClient,
+    s_print,
+    VAULT_MONGO
+)
 from vaultlib import BColors as C
 
 NVD_API: NVDFetch | None = None
-VAULT_MONGO: VaultMongoClient | None = None
 
 
 def update_metadata(collection: str, datetime: Datetime) -> None:
@@ -60,11 +66,16 @@ def insert_cpes(now: Datetime, drop: bool = False, **kwargs) -> None:
     if drop:
         drop_cpes()
     C.print_underline("Starting Collection and Insertion Procedure for CPEs")
-    s_print("Inserting CPEs...")
     cpes = NVD_API.fetch_cpes(**kwargs)
     C.print_success("Collection complete.")
     s_print("Inserting CPEs...")
     VAULT_MONGO.cpes.insert_many(cpes)
+    C.print_success("Complete.")
+    s_print("Creating Indexes...")
+    VAULT_MONGO.cpes.create_index([("vendor", 1)])
+    VAULT_MONGO.cpes.create_index([("product", 1)])
+    VAULT_MONGO.cpes.create_index([("version", 1)])
+    C.print_success("Created.")
     C.print_success("Collection and Insertion Complete.")
     update_metadata("cpes", now)
 
@@ -143,7 +154,7 @@ def update_cves(now: Datetime, **kwargs) -> None:
 
 
 if __name__ == "__main__":
-    arg_parse = VaultArgumentParser(prog="VulnVault",
+    arg_parse = VaultArgumentParser(prog="VulnVault Maintenance",
                                     epilog="Specific NVD API arguments can be passed via a "
                                            "-- suffix and can be in snake_case or camelCase. "
                                            "Example: --cvss_v3_severity HIGH or "
