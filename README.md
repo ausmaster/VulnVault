@@ -8,7 +8,7 @@ This solves this by storing a replica of NVD's CVE and CPE information in a Mong
 Requires Python 3.8+
 ## Features
 ### In Progress
-* Machine Learning to obtain CPEs (and CVEs) from SBOM entries.
+* Machine Learning to obtain CPEs (and CVEs) from plain text entries.
 ## Usage
 By default, VulnVault will attempt to load a JSON configuration file located in the running directory called "config.json" 
 (if it exists, else will use default values).
