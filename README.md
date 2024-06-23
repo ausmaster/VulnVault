@@ -47,11 +47,11 @@ Below are the available options for the configuration file.
 - fetchThreads: Number of threads used to fetch API data
 - punktUrl: URL to fetch NLTK "Punkt" pre-trained model, defaults to their repository
 
-### Options
+### maintain.py Options
 ```
-usage: VulnVault [-h] [-c CONFIG]
-                 (--init | --cpefetch | --cvefetch | --dropcpe | --dropcve | --updatecpe | --updatecve)
-                 [-p]
+usage: VulnVault Maintenance [-h] [-c CONFIG]
+                             (--init | --cpefetch | --cvefetch | --cpematchfetch | --dropcpe | --dropcve | --dropcpematch | --updatecpe | --updatecve)
+                             [-p]
 
 options:
   -h, --help            show this help message and exit
@@ -64,8 +64,10 @@ Operations:
   --init                fetch CPEs and CVEs from NVD
   --cpefetch            fetch CPEs from NVD
   --cvefetch            fetch CVEs from NVD
+  --cpematchfetch       fetch CPE matches from NVD
   --dropcpe             purges all CPEs from CPE collection
   --dropcve             purges all CVEs from CVE collection
+  --dropcpematch        purges all CPE matches from CPE match collection
   --updatecpe           updates the CPE collection
   --updatecve           updates the CVE collection
 
@@ -75,5 +77,22 @@ Operation Augments:
 Specific NVD API arguments can be passed via a -- suffix and can be in
 snake_case or camelCase. Example: --cvss_v3_severity HIGH or --cvssV3Severity
 HIGH
+```
+
+### query.py Options
+```
+usage: VulnVault Query [-h] [-c CONFIG] (--cve CVE | --cpesearch CPESEARCH)
+
+options:
+  -h, --help            show this help message and exit
+  -c CONFIG, --config CONFIG
+                        configuration file path
+
+Operations:
+  Main Operations, must choose one.
+
+  --cve CVE             print CVE information about a specfic CVE by CVE ID
+  --cpesearch CPESEARCH
+                        find closest matching CPE given string
 ```
 
