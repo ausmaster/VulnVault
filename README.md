@@ -3,10 +3,12 @@ NIST currently restricts NVD API usage to 50 requests with an API key and 5 requ
 
 For commercial usage, this is an issue when there are multiple users requesting NVD data. 
 
-This solves this by storing a replica of NVD's CVE and CPE information in a MongoDB database.
+This solves this by storing a replica of NVD's CVE and CPE information in a localized MongoDB database.
 
 Requires Python 3.8+
 ## Features
+### Implemented
+* Given a CPE name (ex: cpe:2.3:a:nsa:ghidra:9.2:\*:\*:\*:\*:\*:\*:\*) or CPE ID, find all CVEs.
 ### In Progress
 * Machine Learning to obtain CPEs (and CVEs) from plain text entries.
 ## Usage

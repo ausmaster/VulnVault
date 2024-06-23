@@ -5,10 +5,11 @@ from __future__ import annotations
 
 from operator import itemgetter
 from sys import stdout
-from typing import Callable, Literal, Any
+from typing import Callable, Literal
 
 import nltk
 from nltk.tokenize import word_tokenize
+from pymongo.cursor import Cursor
 from rapidfuzz.fuzz import WRatio
 
 # pylint: disable=E0401,E0611
@@ -42,7 +43,16 @@ class VaultQuery:
         """
         return self.client.cpes.find_one({"_id": cpe_id})
 
-    def q_cpe_matches(self, cpe_id: str) -> Any:
+    def q_cpe_name(self, cpe_name: str) -> CPESchema | None:
+        """
+        Returns CPE information given CPE Name.
+
+        :param cpe_name: The CPE Name
+        :return: Dict of CPE.
+        """
+        return self.client.cpes.find_one({"cpe_name": cpe_name})
+
+    def q_cpe_matches(self, cpe_id: str) -> Cursor:
         """
         Returns CPE matches information given CPE ID.
 
@@ -50,6 +60,41 @@ class VaultQuery:
         :return: Dict of CPE.
         """
         return self.client.cpematches.find({"matches": cpe_id})
+
+    def cpe_to_cves(self, cpe_id: str) -> Cursor[CVESchema] | None:
+        """
+        Returns all CVEs given a CPE ID.
+
+        :param cpe_id: The CPE ID
+        :return: List of all CVEs
+        """
+        matches = [match["_id"] for match in self.q_cpe_matches(cpe_id)]
+        return self.client.cves.find({
+            "configurations.nodes.cpeMatch": {
+                "$elemMatch": {
+                    "matchCriteriaId": {"$in": matches}
+                }
+            }
+        })
+
+    def cpe_name_to_cves(self, cpe_name: str) -> Cursor[CVESchema] | None:
+        """
+        Returns all CVEs given a CPE Name.
+
+        :param cpe_name: The CPE Name
+        :return: List of all CVEs
+        """
+        cpe = self.q_cpe_name(cpe_name)
+        if not cpe:
+            return None
+        matches = [match["_id"] for match in self.q_cpe_matches(cpe["_id"])]
+        return self.client.cves.find({
+            "configurations.nodes.cpeMatch": {
+                "$elemMatch": {
+                    "matchCriteriaId": {"$in": matches}
+                }
+            }
+        })
 
     def ml_find_cpe(
             self,
