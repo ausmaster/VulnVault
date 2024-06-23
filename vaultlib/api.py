@@ -100,7 +100,7 @@ class NVDFetch:  # pylint: disable=R0902
         self.cve_ch_fetch_limit: int = 5_000  # Default and maximum by NVD
         self.__cpes: partial = partial(get, config.nvd_cpe_api, headers=api_key_hdr)
         self.cpes_fetch_limit: int = 10_000  # Default and maximum by NVD
-        # self.__cpe_mc: partial = partial(get, config.nvd_cpe_mc_api, headers=api_key_hdr)
+        self.__cpe_mc: partial = partial(get, config.nvd_cpe_mc_api, headers=api_key_hdr)
         self.cpe_mc_fetch_limit: int = 500  # Default and maximum by NVD
         self.retries: int = config.conn_retries
         self.retry_delay: int = config.conn_retry_delay  # seconds
@@ -135,7 +135,7 @@ class NVDFetch:  # pylint: disable=R0902
                 # Retry connection
                 print(f"Warning, retry #{retry}: NVD returned HTTPError. "
                       f"{f'{err_msg} ' if (err_msg := response.headers.get('message')) else ''}"
-                      f"Retrying in {self.fetch_delay} seconds.")
+                      f"Retrying in {delay} seconds.")
                 sleep(delay)
                 response = session.send(req)
                 continue
@@ -327,6 +327,26 @@ class NVDFetch:  # pylint: disable=R0902
             })
         return cves
 
+    @staticmethod
+    def __serialize_cpe_matches(res_cpe_matches: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """
+        Serializes CPE matches to MongoDB digestable form.
+
+        :param res_cpe_matches: List of CPE matches returned from API.
+        :return: Serialized list of CPE matches.
+        """
+        cpe_matches = []
+        for match in res_cpe_matches:
+            match = {
+                camel_to_snake(k): v
+                for k, v in match["matchString"].items()
+            }
+            match["_id"] = match.pop("match_criteria_id")
+            if c_matches := match.get("matches"):
+                match["matches"] = [_match["cpeNameId"] for _match in c_matches]
+            cpe_matches.append(match)
+        return cpe_matches
+
     def fetch_cpes(self, **kwargs) -> list[dict[str, Any]]:
         """
         Fetch CPEs from NVD API.
@@ -360,6 +380,24 @@ class NVDFetch:  # pylint: disable=R0902
             self.cves_fetch_limit,
             "vulnerabilities",
             self.__serialize_cves,
+            **kwargs
+        )
+
+    def fetch_cpe_matches(self, **kwargs) -> list[dict[str, Any]]:
+        """
+        Fetch CPE matches from NVD API.
+
+        :param kwargs: Optional query parameters to pass to NVD API.
+        Each parameter on https://nvd.nist.gov/developers/vulnerabilities
+        is supported with caviot being that each parameter needs to be in
+        snake_case instead of camelCase (ex: cpe_name instead of cpeName).
+        :return: List of CVEs in a dictionary form.
+        """
+        return self.__fetch_collection(
+            self.__cpe_mc,
+            self.cpe_mc_fetch_limit,
+            "matchStrings",
+            self.__serialize_cpe_matches,
             **kwargs
         )
 

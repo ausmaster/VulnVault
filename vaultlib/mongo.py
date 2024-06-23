@@ -24,6 +24,7 @@ class VaultMongoClient(MongoClient):
         self.meta: Collection = self.db.metadata
         self.cpes: Collection[CPESchema] = self.db.cpes
         self.cves: Collection[CVESchema] = self.db.cves
+        self.cpematches: Collection = self.db.cpematches
 
     def raise_if_not_connected(
             self,

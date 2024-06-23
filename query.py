@@ -4,7 +4,8 @@ This is the script with functions to query certain items from the MongoDB
 from __future__ import annotations
 
 from operator import itemgetter
-from typing import Callable
+from sys import stdout
+from typing import Callable, Literal, Any
 
 import nltk
 from nltk.tokenize import word_tokenize
@@ -23,7 +24,7 @@ class VaultQuery:
     def __init__(self, mongo_client: VaultMongoClient) -> None:
         self.client = mongo_client
 
-    def find_cve_id(self, cve_id: str) -> CVESchema | None:
+    def q_cve_id(self, cve_id: str) -> CVESchema | None:
         """
         Returns CVE information given CVE ID.
 
@@ -32,7 +33,7 @@ class VaultQuery:
         """
         return self.client.cves.find_one({"_id": cve_id})
 
-    def find_cpe_id(self, cpe_id: str) -> CPESchema | None:
+    def q_cpe_id(self, cpe_id: str) -> CPESchema | None:
         """
         Returns CPE information given CPE ID.
 
@@ -41,10 +42,19 @@ class VaultQuery:
         """
         return self.client.cpes.find_one({"_id": cpe_id})
 
+    def q_cpe_matches(self, cpe_id: str) -> Any:
+        """
+        Returns CPE matches information given CPE ID.
+
+        :param cpe_id: The CPE ID
+        :return: Dict of CPE.
+        """
+        return self.client.cpematches.find({"matches": cpe_id})
+
     def ml_find_cpe(
             self,
             cpe_search_str: str,
-            frmt: str = "Vpv",
+            frmt: Literal["Vpv", "pv"] = "Vpv",
             threshold: float = 80.0,
             limit: int = 10
     ) -> list[tuple[float, CPESchema]]:
@@ -113,12 +123,12 @@ if __name__ == '__main__':
     C.print_success("Connected.")
 
     s_print("Ensuring NLTK Model downloaded...")
-    nltk.download(config.punkt_url)
+    nltk.download(config.punkt_url, print_error_to=stdout)
     C.print_success("Complete.")
 
     query = VaultQuery(mngo_client)
 
     if args.cve:
-        print(query.find_cve_id(args.cve))
+        print(query.q_cve_id(args.cve))
     elif args.cpesearch:
         print(query.ml_find_cpe(args.cpesearch))

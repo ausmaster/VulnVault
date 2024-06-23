@@ -50,9 +50,8 @@ def initial_load(now: Datetime) -> None:
     """
     drop_metadata()
     insert_cpes(now, drop=True)
-    update_metadata("cpes", now)
     insert_cves(now, drop=True)
-    update_metadata("cves", now)
+    insert_cpe_matches(now, drop=True)
 
 
 def insert_cpes(now: Datetime, drop: bool = False, **kwargs) -> None:
@@ -153,6 +152,36 @@ def update_cves(now: Datetime, **kwargs) -> None:
     update_metadata("cves", now)
 
 
+def drop_cpe_matches() -> None:
+    """
+    Procedure for dropping all CVEs from CVE collection.
+
+    :return: None
+    """
+    s_print("Dropping CVEs collection...")
+    VAULT_MONGO.db.drop_collection("cpematches")
+    C.print_success("Dropped.")
+
+
+def insert_cpe_matches(now: Datetime, drop: bool = False, **kwargs) -> None:
+    """
+    Insert procudure for inserting CPE matches.
+
+    :param now: DateTime now
+    :param drop: Drop collection before inserting CVEs.
+    :return: None
+    """
+    if drop:
+        drop_cpe_matches()
+    C.print_underline("Starting Collection and Insertion Procedure for CPE matches")
+    cpe_matches = NVD_API.fetch_cpe_matches(**kwargs)
+    C.print_success("Collection complete.")
+    s_print("Inserting CPE matches...")
+    VAULT_MONGO.cpematches.insert_many(cpe_matches)
+    C.print_success("Collection and Insertion Complete.")
+    update_metadata("cpematches", now)
+
+
 if __name__ == "__main__":
     arg_parse = VaultArgumentParser(prog="VulnVault Maintenance",
                                     epilog="Specific NVD API arguments can be passed via a "
@@ -167,10 +196,14 @@ if __name__ == "__main__":
                            help="fetch CPEs from NVD")
     op_select.add_argument("--cvefetch", action="store_true",
                            help="fetch CVEs from NVD")
+    op_select.add_argument("--cpematchfetch", action="store_true",
+                           help="fetch CPE matches from NVD")
     op_select.add_argument("--dropcpe", action="store_true",
                            help="purges all CPEs from CPE collection")
     op_select.add_argument("--dropcve", action="store_true",
                            help="purges all CVEs from CVE collection")
+    op_select.add_argument("--dropcpematch", action="store_true",
+                           help="purges all CPE matches from CPE match collection")
     op_select.add_argument("--updatecpe", action="store_true",
                            help="updates the CPE collection")
     op_select.add_argument("--updatecve", action="store_true",
@@ -195,6 +228,8 @@ if __name__ == "__main__":
         insert_cpes(d_now, drop=args.purge, **api_options)
     elif args.cvefetch:
         insert_cves(d_now, drop=args.purge, **api_options)
+    elif args.cpematchfetch:
+        insert_cpe_matches(d_now, drop=args.purge, **api_options)
     elif args.dropcpe:
         drop_cpes()
     elif args.dropcve:
