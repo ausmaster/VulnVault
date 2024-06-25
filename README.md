@@ -83,7 +83,8 @@ HIGH
 
 ### query.py Options
 ```
-usage: VulnVault Query [-h] [-c CONFIG] (--cve CVE | --cpesearch CPESEARCH)
+usage: VulnVault Query [-h] [-c CONFIG]
+                       (--cpe CPE | --cpeid CPEID | --cve CVE | --cpe2cves CPE2CVES | --str2cpes STR2CPES)
 
 options:
   -h, --help            show this help message and exit
@@ -93,8 +94,11 @@ options:
 Operations:
   Main Operations, must choose one.
 
+  --cpe CPE             print CPE information about a specific CPE by CPE name
+  --cpeid CPEID         print CPE information about a specific CPE by CPE ID
   --cve CVE             print CVE information about a specfic CVE by CVE ID
-  --cpesearch CPESEARCH
-                        find closest matching CPE given string
+  --cpe2cves CPE2CVES   print all CVEs given a CPE name
+  --str2cpes STR2CPES   find closest matching CPE given string in the form
+                        '<VENDOR> <PRODUCT> <VERSION>'
 ```
 
