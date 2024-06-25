@@ -109,7 +109,7 @@ def update_collection(coll: str, now: Datetime, **kwargs) -> None:
     :return: None
     """
     print_coll_str, api_call = arg_to_print_and_func[coll]
-    C.print_underline("Updating CVEs collection")
+    C.print_underline(f"Updating {print_coll_str} collection")
     metadata = vault_mongo.meta.find_one({"collection": coll})
     if not metadata or not (last_updated := metadata.get("updated")):
         raise MetadataNotFoundException(f"No {coll} metadata found")

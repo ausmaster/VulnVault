@@ -3,9 +3,11 @@ This is the script with functions to query certain items from the MongoDB
 """
 from __future__ import annotations
 
+from datetime import datetime as Datetime
 from operator import itemgetter
 from sys import stdout
-from typing import Callable, Literal
+from textwrap import wrap
+from typing import Callable, Literal, Final
 
 import nltk
 from nltk.tokenize import word_tokenize
@@ -17,6 +19,39 @@ from vaultlib import VaultArgumentParser, VaultConfig, VaultMongoClient, s_print
 from vaultlib import BColors as C
 from vaultlib.api import CPESchema, CVESchema
 
+DATETIME_FORMAT: Final[str] = "%m/%d/%Y %H:%M:%S"
+
+
+def cve_to_str(cve: CVESchema) -> str:
+    """
+    Creates a printable representation of a CVE document.
+
+    :param cve: CVE document from Mongo
+    :return: String representation of a CVE document
+    """
+    if not cve:
+        return ""
+    # Python 3.8 - 3.11 do not allow backslashes inside f-string expression
+    description = "\n".join(wrap(cve['description']))
+    return f"""[{cve['_id']}]
+Published: {Datetime.fromisoformat(cve['published']).strftime(DATETIME_FORMAT)}
+Last Modified: {Datetime.fromisoformat(cve['last_modified']).strftime(DATETIME_FORMAT)}
+Status: {cve['status']}
+Description: {description}
+"""
+
+
+def gen_printable_cves(cve_cursor: Cursor[CVESchema]) -> str:
+    """
+    Generator function that creates a printable representation of each CVE
+
+    :param cve_cursor: Results cursor from Pymongo
+    :return: Yield string representation of CVE
+    """
+    for cve in cve_cursor:
+        yield cve_to_str(cve)
+    return ""
+
 
 class VaultQuery:
     """
@@ -25,18 +60,18 @@ class VaultQuery:
     def __init__(self, mongo_client: VaultMongoClient) -> None:
         self.client = mongo_client
 
-    def q_cve_id(self, cve_id: str) -> CVESchema | None:
+    def q_cve_id(self, cve_id: str) -> None:
         """
-        Returns CVE information given CVE ID.
+        Prints CVE information given CVE ID.
 
         :param cve_id: The CVE ID
-        :return: Dict of CVE.
+        :return: None
         """
-        return self.client.cves.find_one({"_id": cve_id})
+        print(cve_to_str(self.client.cves.find_one({"_id": cve_id})))
 
     def q_cpe_id(self, cpe_id: str) -> CPESchema | None:
         """
-        Returns CPE information given CPE ID.
+        Prints CPE information given CPE ID.
 
         :param cpe_id: The CPE ID
         :return: Dict of CPE.
@@ -45,7 +80,7 @@ class VaultQuery:
 
     def q_cpe_name(self, cpe_name: str) -> CPESchema | None:
         """
-        Returns CPE information given CPE Name.
+        Prints CPE information given CPE Name.
 
         :param cpe_name: The CPE Name
         :return: Dict of CPE.
@@ -54,30 +89,32 @@ class VaultQuery:
 
     def q_cpe_matches(self, cpe_id: str) -> Cursor:
         """
-        Returns CPE matches information given CPE ID.
+        Prints CPE matches information given CPE ID.
 
         :param cpe_id: The CPE ID
         :return: Dict of CPE.
         """
         return self.client.cpematches.find({"matches": cpe_id})
 
-    def cpe_to_cves(self, cpe_id: str) -> Cursor[CVESchema] | None:
+    def cpe_to_cves(self, cpe_id: str) -> None:
         """
-        Returns all CVEs given a CPE ID.
+        Prints all CVEs given a CPE ID.
 
         :param cpe_id: The CPE ID
         :return: List of all CVEs
         """
-        matches = [match["_id"] for match in self.q_cpe_matches(cpe_id)]
-        return self.client.cves.find({
+        for cve in gen_printable_cves(self.client.cves.find({
             "configurations.nodes.cpeMatch": {
                 "$elemMatch": {
-                    "matchCriteriaId": {"$in": matches}
+                    "matchCriteriaId": {
+                        "$in": [match["_id"] for match in self.q_cpe_matches(cpe_id)]
+                    }
                 }
             }
-        })
+        })):
+            print(cve)
 
-    def cpe_name_to_cves(self, cpe_name: str) -> Cursor[CVESchema] | None:
+    def cpe_name_to_cves(self, cpe_name: str) -> None:
         """
         Returns all CVEs given a CPE Name.
 
@@ -86,15 +123,17 @@ class VaultQuery:
         """
         cpe = self.q_cpe_name(cpe_name)
         if not cpe:
-            return None
-        matches = [match["_id"] for match in self.q_cpe_matches(cpe["_id"])]
-        return self.client.cves.find({
+            return
+        for cve in gen_printable_cves(self.client.cves.find({
             "configurations.nodes.cpeMatch": {
                 "$elemMatch": {
-                    "matchCriteriaId": {"$in": matches}
+                    "matchCriteriaId": {
+                        "$in": [match["_id"] for match in self.q_cpe_matches(cpe["_id"])]
+                    }
                 }
             }
-        })
+        })):
+            print(cve)
 
     def ml_find_cpe(
             self,
@@ -161,8 +200,17 @@ if __name__ == '__main__':
     arg_parse = VaultArgumentParser(prog="VulnVault Query")
     op_group = arg_parse.add_argument_group("Operations", "Main Operations, must choose one.")
     op_select = op_group.add_mutually_exclusive_group(required=True)
-    op_select.add_argument("--cve", help="print CVE information about a specfic CVE by CVE ID")
-    op_select.add_argument("--cpesearch", help="find closest matching CPE given string")
+    op_select.add_argument("--cpe",
+                           help="print CPE information about a specific CPE by CPE name")
+    op_select.add_argument("--cpeid",
+                           help="print CPE information about a specific CPE by CPE ID")
+    op_select.add_argument("--cve",
+                           help="print CVE information about a specfic CVE by CVE ID")
+    op_select.add_argument("--cpe2cves",
+                           help="print all CVEs given a CPE name")
+    op_select.add_argument("--str2cpes",
+                           help="find closest matching CPE given "
+                                "string in the form '<VENDOR> <PRODUCT> <VERSION>'")
     args = arg_parse.parse_args()
 
     config = VaultConfig(args.config)
@@ -177,6 +225,12 @@ if __name__ == '__main__':
     query = VaultQuery(mngo_client)
 
     if args.cve:
-        print(query.q_cve_id(args.cve))
-    elif args.cpesearch:
-        print(query.ml_find_cpe(args.cpesearch))
+        query.q_cve_id(args.cve)
+    elif args.cpe:
+        print(query.q_cpe_name(args.cpe))
+    elif args.cpeid:
+        print(query.q_cpe_id(args.cpeid))
+    elif args.cpe2cves:
+        query.cpe_name_to_cves(args.cpe2cves)
+    elif args.str2cpes:
+        print(query.ml_find_cpe(args.str2cpes))
