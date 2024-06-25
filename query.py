@@ -104,12 +104,15 @@ class VaultQuery:
             limit: int = 10
     ) -> list[tuple[float, CPESchema]]:
         """
-        Using fuzzy matching, find the most similar CPEs
-        given a string containing the Vendor, Product, and/or Version
+        Using Levenshtein Distance, find the most similar CPE(s)
+        given a string containing the Vendor, Product, and/or Version.
+        Takes a weighted score across vendor (40%), product (40%),
+        and version (20%) for overall similarity.
 
         :param cpe_search_str: String to search for
         :param frmt: The specific ordering of token elements in the string.
-        V = Vendor, p = Product, v = Version.
+        V = Vendor, p = Product, v = Version. Defaults to "Vpv",
+        choices are "Vpv" and "pv".
         :param threshold: Minimum WRatio score to be included in results.
         :param limit: Maximum number of results to return.
         :return: Sorted list of CPEs from highest WRatio score to lowest.

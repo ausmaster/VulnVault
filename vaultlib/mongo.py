@@ -42,6 +42,3 @@ class VaultMongoClient(MongoClient):
         except ConnectionFailure as err:
             raise ConnectionFailure(exception_str) from err
         return self
-
-
-VAULT_MONGO: VaultMongoClient | None = None

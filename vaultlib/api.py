@@ -427,14 +427,15 @@ class NVDParallelAPICaller:  # pylint: disable=R0902
 
         api_resp = api_call(params)
         self.calls: list[partial] = []
-        for curr_index in range(
-                api_resp["startIndex"] + api_resp["resultsPerPage"],
-                api_resp["totalResults"],
-                api_resp["resultsPerPage"]
-        ):
-            curr_params = deepcopy(params)
-            curr_params["startIndex"] = curr_index
-            self.calls.append(partial(api_call, curr_params))
+        if int(api_resp.get("resultsPerPage")):
+            for curr_index in range(
+                    api_resp["startIndex"] + api_resp["resultsPerPage"],
+                    api_resp["totalResults"],
+                    api_resp["resultsPerPage"]
+            ):
+                curr_params = deepcopy(params)
+                curr_params["startIndex"] = curr_index
+                self.calls.append(partial(api_call, curr_params))
         self.total_calls = len(self.calls)
         self.results.extend(api_resp[data_key])
 

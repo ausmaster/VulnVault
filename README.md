@@ -50,7 +50,7 @@ Below are the available options for the configuration file.
 ### maintain.py Options
 ```
 usage: VulnVault Maintenance [-h] [-c CONFIG]
-                             (--init | --cpefetch | --cvefetch | --cpematchfetch | --dropcpe | --dropcve | --dropcpematch | --updatecpe | --updatecve)
+                             (--init | --fetchcpes | --fetchcves | --fetchcpematches | --dropcpes | --dropcves | --dropcpematches | --updatecpes | --updatecves | --updatecpematches)
                              [-p]
 
 options:
@@ -61,18 +61,20 @@ options:
 Operations:
   Main Operations, must choose one.
 
-  --init                fetch CPEs and CVEs from NVD
-  --cpefetch            fetch CPEs from NVD
-  --cvefetch            fetch CVEs from NVD
-  --cpematchfetch       fetch CPE matches from NVD
-  --dropcpe             purges all CPEs from CPE collection
-  --dropcve             purges all CVEs from CVE collection
-  --dropcpematch        purges all CPE matches from CPE match collection
-  --updatecpe           updates the CPE collection
-  --updatecve           updates the CVE collection
+  --init                load all collections from NVD
+  --fetchcpes           fetch CPEs from NVD
+  --fetchcves           fetch CVEs from NVD
+  --fetchcpematches     fetch CPE matches from NVD
+  --dropcpes            purges all CPEs from CPE collection
+  --dropcves            purges all CVEs from CVE collection
+  --dropcpematches      purges all CPE matches from CPE match collection
+  --updatecpes          updates the CPE collection
+  --updatecves          updates the CVE collection
+  --updatecpematches    updates the CPE match collection
 
 Operation Augments:
-  -p, --purge           purges selected collection before performing operation
+  -p, --purge           purges selected collection before performing
+                        operation. Only functional for fetch operations.
 
 Specific NVD API arguments can be passed via a -- suffix and can be in
 snake_case or camelCase. Example: --cvss_v3_severity HIGH or --cvssV3Severity
