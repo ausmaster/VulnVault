@@ -98,7 +98,7 @@ Operations:
   --cpeid CPEID         print CPE information about a specific CPE by CPE ID
   --cve CVE             print CVE information about a specfic CVE by CVE ID
   --cpe2cves CPE2CVES   print all CVEs given a CPE name
-  --str2cpes STR2CPES   find closest matching CPE given string in the form
-                        '<VENDOR> <PRODUCT> <VERSION>'
+  --str2cpes STR2CPES   prints closest matching CPE(s) given string in the
+                        form '<VENDOR> <PRODUCT> <VERSION>'.
 ```
 

@@ -6,40 +6,47 @@ from __future__ import annotations
 from collections import namedtuple
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from copy import deepcopy
+from datetime import datetime as Datetime
 from functools import partial
 from re import split
+from textwrap import wrap
 from threading import Lock
 from time import time, sleep
-from typing import Any, Callable, TypedDict
+from typing import Any, Callable, TypedDict, Final, Generator
 
+from pymongo.cursor import Cursor
 from requests import get, HTTPError, PreparedRequest, Response, Session
 
 from .config import VaultConfig
 from .utils import BColors as C
 from .utils import camel_to_snake, snake_to_camel, int_to_ordinal, s_print
 
+DATETIME_FORMAT: Final[str] = "%m/%d/%Y %H:%M:%S"
+
 
 class CVESchema(TypedDict):
     """
     Schema for CVE records in the cves MongoDB collection.
     """
+    _id: str
     description: str
     published: str
     last_modified: str
     status: str
-    metrics_v20: dict[str, dict[str, Any]]
-    metrics_v30: dict[str, dict[str, Any]]
-    metrics_v31: dict[str, dict[str, Any]]
-    metrics_v40: dict[str, dict[str, Any]]
+    metrics_v20: dict[str, dict[str, str | float]]
+    metrics_v30: dict[str, dict[str, str | float]]
+    metrics_v31: dict[str, dict[str, str | float]]
+    metrics_v40: dict[str, dict[str, str | float]]
     configurations: list[dict[str, Any]]
-    references: list[dict[str, Any]]
-    cwes: list[dict[str, Any]]
+    references: list[dict[str, str | list[str]]]
+    cwes: dict[str, str]
 
 
 class CPESchema(TypedDict, total=False):
     """
     Schema for CPE records in the cpes MongoDB collection.
     """
+    _id: str
     cpe_name: str
     created: str
     last_modified: str
@@ -421,7 +428,7 @@ class NVDParallelAPICaller:  # pylint: disable=R0902
         self.results: list[dict[str, Any]] = []
         self.max_workers = max_workers
         self.progress_callback = progress_callback
-        self.last_call_time = 0
+        self.last_call_time = 0.0
         self.total_calls = 0
         self.completed_calls = 0
 
@@ -479,3 +486,67 @@ class NVDParallelAPICaller:  # pylint: disable=R0902
             for future in as_completed(future_to_call):
                 future.result()  # Ensure that all futures are processed
         return self.results
+
+
+def cve_str(cve: CVESchema) -> str:
+    """
+    Creates a printable representation of a CVE document.
+
+    :param cve: CVE document from Mongo
+    :return: String representation of a CVE document
+    """
+    if not cve:
+        return ""
+    # Python 3.8 - 3.11 do not allow backslashes inside f-string expression
+    description = "\n".join(wrap(cve['description']))
+    references = "\n".join(map(lambda x: f"{x['source']} - {x['url']}", cve["references"]))
+    return f"""[{cve["_id"]}]
+Published: {Datetime.fromisoformat(cve["published"]).strftime(DATETIME_FORMAT)}
+Last Modified: {Datetime.fromisoformat(cve["last_modified"]).strftime(DATETIME_FORMAT)}
+Status: {cve["status"]}
+Description: {description}
+CWEs: {", ".join(cve["cwes"].values())}
+References: 
+{references}
+"""
+
+
+def cpe_str(cpe: CPESchema) -> str:
+    """
+    Creates a printable representation of a CPE document.
+
+    :param cpe: CPE document from Mongo
+    :return: String representation of a CPE document
+    """
+    return f"""[{cpe["cpe_name"]}]
+ID: {cpe["_id"]}
+Title: {cpe["title"]}
+Created: {Datetime.fromisoformat(cpe["created"]).strftime(DATETIME_FORMAT)}
+Last Modified: {Datetime.fromisoformat(cpe["last_modified"]).strftime(DATETIME_FORMAT)}
+Deprecated: {cpe["deprecated"]}
+Part: {cpe["part"]}
+Vendor: {cpe["vendor"]}
+Product: {cpe["product"]}
+Version: {cpe["version"]}
+Update: {cpe["update"]}
+Edition: {cpe["edition"]}
+Language: {cpe["language"]}
+SW Edition: {cpe["sw_edition"]}
+Target SW: {cpe["target_sw"]}
+Target HW: {cpe["target_hw"]}
+Other: {cpe["other"]}
+"""
+
+
+def stringify_results(cursor: Cursor[CVESchema] | Cursor[CPESchema]) -> Generator[str, None, None]:
+    """
+    Generator function that creates a printable representation of each CVE.
+
+    :param cursor: Results cursor from Pymongo
+    :return: Yield string representation of CVE
+    """
+    type_func = Callable[[CVESchema], str] | Callable[[CPESchema], str]  # noqa
+    func: type_func = cve_str if cursor.collection.name == "cves" \
+        else cpe_str
+    for schema in cursor:
+        yield func(schema)  # type: ignore
