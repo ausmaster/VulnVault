@@ -7,7 +7,7 @@ from datetime import datetime as Datetime
 from operator import itemgetter
 from sys import stdout
 from textwrap import wrap
-from typing import Callable, Literal, Final
+from typing import Callable, Literal, Final, Generator
 
 import nltk
 from nltk.tokenize import word_tokenize
@@ -41,7 +41,7 @@ Description: {description}
 """
 
 
-def gen_printable_cves(cve_cursor: Cursor[CVESchema]) -> str:
+def gen_printable_cves(cve_cursor: Cursor[CVESchema]) -> Generator[str, None, None]:
     """
     Generator function that creates a printable representation of each CVE
 
@@ -50,7 +50,6 @@ def gen_printable_cves(cve_cursor: Cursor[CVESchema]) -> str:
     """
     for cve in cve_cursor:
         yield cve_to_str(cve)
-    return ""
 
 
 class VaultQuery:
@@ -67,7 +66,10 @@ class VaultQuery:
         :param cve_id: The CVE ID
         :return: None
         """
-        print(cve_to_str(self.client.cves.find_one({"_id": cve_id})))
+        if cve := self.client.cves.find_one({"_id": cve_id}):
+            print(cve_to_str(cve))
+        else:
+            print(f"{cve_id} not found.")
 
     def q_cpe_id(self, cpe_id: str) -> CPESchema | None:
         """
