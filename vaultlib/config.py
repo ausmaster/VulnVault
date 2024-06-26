@@ -2,6 +2,7 @@
 This is used to configure VulnVault based on a configuration file.
 """
 from json import load
+from os import getenv
 from pathlib import Path
 
 from .utils import camel_to_snake
@@ -37,11 +38,11 @@ class VaultConfig:  # pylint: disable=R0902,R0903
         # Number of threads used to fetch API data
         self.fetch_threads: int = 3
         # NLTK "Punkt" Pre-trained model URL
-        self.punkt_url = "punkt"
+        self.punkt_url: str = "punkt"
 
         # All Config values from config.json are converted from camelCase to snake_case
         # overrides instance variable if exists
-        if (config_path := Path(config_path)).exists():
+        if (config_path := Path(config_path)).exists():  # type: ignore
             g_vars = dir(self)
             with open(config_path, "r", encoding="utf-8") as config_file:
                 for config_key, config_value in load(config_file).items():
@@ -49,7 +50,14 @@ class VaultConfig:  # pylint: disable=R0902,R0903
                     if config_key not in g_vars:
                         continue
 
-                    if (g_var_type := type(getattr(self, config_key))) is not str:
+                    if config_key == "api_key" and isinstance(config_value, dict):
+                        try:
+                            self.api_key = getenv(config_value["env"])  # type: ignore
+                        except KeyError as e:
+                            raise ValueError(
+                                "api_key JSON object does not have a \"env\" property"
+                            ) from e
+                    elif (g_var_type := type(getattr(self, config_key))) is not str:
                         setattr(self, config_key, g_var_type(config_value))
                     else:
                         setattr(self, config_key, config_value)

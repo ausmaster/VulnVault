@@ -113,7 +113,7 @@ def update_collection(coll: str, now: Datetime, **kwargs) -> None:
     metadata = vault_mongo.meta.find_one({"collection": coll})
     if not metadata or not (last_updated := metadata.get("updated")):
         raise MetadataNotFoundException(f"No {coll} metadata found")
-    results = [
+    results: list[ReplaceOne] = [
         ReplaceOne({"_id": x["_id"]}, x, upsert=True)
         for x in api_call(
             last_mod_start_date=last_updated.isoformat(),
@@ -182,7 +182,10 @@ if __name__ == "__main__":
                              help="purges selected collection before performing operation. "
                                   "Only functional for fetch operations.")
     args, api_options = arg_parse.parse_known_args()
-    api_options = {api_options[i][2:]: api_options[i + 1] for i in range(0, len(api_options), 2)}
+    api_options: dict[str, str] = {
+        api_options[i][2:]: api_options[i + 1]
+        for i in range(0, len(api_options), 2)
+    }
 
     vault_mongo, nvd_api, arg_to_print_and_func = setup(args.config)
 

@@ -38,7 +38,7 @@ Below are the available options for the configuration file.
 - nvdCveChApi: NVD CVE Change History API Endpoint
 - nvdCpeApi: NVD CPE API Endpoint
 - nvdCpeMcApi: NVD CPE Match Criteria API
-- apiKey: NVD API Key
+- apiKey: NVD API Key as string OR fetch from environment variable by setting to {"env": <NAME_OF_ENVIRONMENT_VAR>}
 - mongoHost: MongoDB Docker Container Hostname
 - mongoPort: MongoDB Docker Container Port
 - connRetries: Connection Retry Limit
