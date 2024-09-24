@@ -15,13 +15,13 @@ class VaultConfig:  # pylint: disable=R0902,R0903
     def __init__(self, config_path: str = "config.json") -> None:
         # All config values have a default value and can be overridden via config.json file
         # NVD CVE API Endpoint
-        self.nvd_cve_api: str = "http://services.nvd.nist.gov/rest/json/cves/2.0"
+        self.nvd_cve_api: str = "https://services.nvd.nist.gov/rest/json/cves/2.0"
         # NVD CVE Change History API Endpoint
-        self.nvd_cve_ch_api: str = "http://services.nvd.nist.gov/rest/json/cvehistory/2.0"
+        self.nvd_cve_ch_api: str = "https://services.nvd.nist.gov/rest/json/cvehistory/2.0"
         # NVD CPE API Endpoint
-        self.nvd_cpe_api: str = "http://services.nvd.nist.gov/rest/json/cpes/2.0"
+        self.nvd_cpe_api: str = "https://services.nvd.nist.gov/rest/json/cpes/2.0"
         # NVD CPE Match Criteria API
-        self.nvd_cpe_mc_api: str = "http://services.nvd.nist.gov/rest/json/cpematch/2.0"
+        self.nvd_cpe_mc_api: str = "https://services.nvd.nist.gov/rest/json/cpematch/2.0"
         # NVD API Key
         self.api_key: str = ""
         # MongoDB Docker Container Hostname
