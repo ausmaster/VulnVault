@@ -413,7 +413,7 @@ class NVDParallelAPICaller:  # pylint: disable=R0902
     """
     Introduces parallelism for API calls to NVD.
     """
-    def __init__(  # pylint: disable=R0913
+    def __init__(  # pylint: disable=R0913,R0917
             self,
             delay: float,
             progress_callback: Callable[[int, int], None],
