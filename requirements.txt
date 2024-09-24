@@ -1,4 +1,4 @@
-pymongo~=4.7.2
+pymongo~=4.9.1
 requests~=2.32.2
-nltk~=3.8.1
+nltk~=3.9.1
 rapidfuzz~=3.9.3
