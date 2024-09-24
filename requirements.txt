@@ -1,6 +1,6 @@
 pymongo~=4.7.2
 requests~=2.32.2
-nltk~=3.8.2
+nltk~=3.9.1
 rapidfuzz~=3.9.3
 dnspython>=2.6.1 # not directly required, pinned by Snyk to avoid a vulnerability
 zipp>=3.19.1 # not directly required, pinned by Snyk to avoid a vulnerability
