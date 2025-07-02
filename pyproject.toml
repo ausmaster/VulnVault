@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vulnvault"
+version = "0.1"
+description = "A localized version of NVD's information on CPEs, CVEs, etc."
+authors = [
+    { name="Austin Stark", email="austin.stark@blacklanternsecurity.com" }
+]
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+    "pymongo~=4.9.1",
+    "requests~=2.32.2",
+    "nltk~=3.9.1",
+    "rapidfuzz~=3.9.3"
+]
