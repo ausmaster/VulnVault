@@ -22,6 +22,8 @@ class VaultQuery:
     """
     Main class to query items from the Vault MongoDB
     """
+    client: VaultMongoClient
+
     def __init__(self, mongo_client: VaultMongoClient) -> None:
         self.client = mongo_client
 
@@ -92,22 +94,32 @@ class VaultQuery:
         Prints all CVEs given a CPE ID.
 
         :param cpe_id: The CPE ID
-        :return: List of all CVEs
+        :return: None, prints out all CVEs to console.
         """
         for str_cve in stringify_results(self.q_cpe_to_cves(cpe_id)):
             print(str_cve)
+
+    def q_cpename_to_cves(self, cpe_name: str) -> Cursor[CVESchema] | None:
+        """
+        Queries CPE matches information given CPE Name.
+
+        :param cpe_name: The CPE name
+        :return: Cursor for all CVEs
+        """
+        cpe = self.client.cpes.find_one({"cpe_name": cpe_name})
+        if not cpe:
+            return None
+        return self.q_cpe_to_cves(cpe["_id"])
 
     def p_cpename_to_cves(self, cpe_name: str) -> None:
         """
         Prints all CVEs given a CPE Name.
 
         :param cpe_name: The CPE Name
-        :return: List of all CVEs
+        :return: None, prints out all CVEs to console.
         """
-        cpe = self.client.cpes.find_one({"cpe_name": cpe_name})
-        if not cpe:
-            return
-        self.p_cpe_to_cves(cpe["_id"])
+        for str_cve in stringify_results(self.q_cpename_to_cves(cpe_name)):
+            print(str_cve)
 
     def ml_find_cpe(
             self,
