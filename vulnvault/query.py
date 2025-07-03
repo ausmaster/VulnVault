@@ -13,9 +13,9 @@ from pymongo.cursor import Cursor
 from rapidfuzz.fuzz import WRatio
 
 # pylint: disable=E0401,E0611
-from vaultlib import VaultArgumentParser, VaultConfig, VaultMongoClient, s_print
-from vaultlib import BColors as C
-from vaultlib.api import CPESchema, CVESchema, stringify_results, cpe_str, cve_str
+from . import VaultArgumentParser, VaultConfig, VaultMongoClient, s_print
+from . import BColors as C
+from .api import CPESchema, CVESchema, stringify_results, cpe_str, cve_str
 
 
 class VaultQuery:
