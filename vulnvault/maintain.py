@@ -8,14 +8,14 @@ from typing import Callable
 from pymongo import ReplaceOne
 
 # pylint: disable=E0401,E0611
-from . import (
+from lib import (
     NVDFetch,
     VaultArgumentParser,
     VaultConfig,
     VaultMongoClient,
     s_print
 )
-from . import BColors as C
+from lib import BColors as C
 
 vault_mongo: VaultMongoClient
 nvd_api: NVDFetch

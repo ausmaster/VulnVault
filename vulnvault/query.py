@@ -13,9 +13,9 @@ from pymongo.cursor import Cursor
 from rapidfuzz.fuzz import WRatio
 
 # pylint: disable=E0401,E0611
-from . import VaultArgumentParser, VaultConfig, VaultMongoClient, s_print
-from . import BColors as C
-from .api import CPESchema, CVESchema, stringify_results, cpe_str, cve_str
+from lib import VaultArgumentParser, VaultConfig, VaultMongoClient, s_print
+from lib import BColors as C
+from lib.api import CPESchema, CVESchema, stringify_results, cpe_str, cve_str
 
 
 class VaultQuery:
@@ -27,99 +27,137 @@ class VaultQuery:
     def __init__(self, mongo_client: VaultMongoClient) -> None:
         self.client = mongo_client
 
-    def p_cve_id(self, cve_id: str) -> None:
+    def cve_id(self, cve_id: str, prnt: bool = False) -> CVESchema | None:
         """
-        Prints CVE information given CVE ID.
+        Queries/Prints CVE information given actual CVE ID (_id aligns to the actual NVD CVE ID)
 
         :param cve_id: The CVE ID
-        :return: None
+        :param prnt: If True, prints out the CVE information instead of returning CVE. Always returns None, Defaults to False.
+        :return CVE Record in CVESchema, None if not found. None if prnt.
         """
         if cve := self.client.cves.find_one({"_id": cve_id}):
-            print(cve_str(cve))
+            if prnt:
+                print(cve_str(cve))
+                return None
+            else:
+                return cve
         else:
-            print(f"{cve_id} not found.")
+            if prnt:
+                print(f"{cve_id} not found.")
+            return None
 
-    def p_cpe_id(self, cpe_id: str) -> None:
+    def cpe_ref(self, cpe_id: str, prnt: bool = False) -> CPESchema | None:
         """
-        Prints CPE information given CPE ID.
+        Queries/Prints CPE information given CPE reference _id in Mongo.
 
-        :param cpe_id: The CPE ID
-        :return: Dict of CPE.
+        :param cpe_id: The CPE reference _id
+        :param prnt: If True, prints out the CPE information instead of returning CPE. Always returns None, Defaults to False.
+        :returns CPE Record in CPESchema, None if not found. None if prnt.
         """
         if cpe := self.client.cpes.find_one({"_id": cpe_id}):
-            print(cpe_str(cpe))
+            if prnt:
+                print(cpe_str(cpe))
+                return None
+            else:
+                return cpe
         else:
-            print(f"{cpe_id} not found.")
+            if prnt:
+                print(f"{cpe_id} not found.")
+            return None
 
-    def p_cpe_name(self, cpe_name: str) -> None:
+    def cpe_name(self, cpe_name: str, prnt: bool = False) -> CPESchema | None:
         """
-        Prints CPE information given CPE Name.
+        Queries/Prints CPE information given CPE Name (CPE String).
 
-        :param cpe_name: The CPE Name
-        :return: Dict of CPE.
+        :param cpe_name: The NVD CPE Name
+        :param prnt: If True, prints out the CVE information instead of returning CVE. Always returns None, Defaults to False.
+        :returns CVE Record in CVESchema, None if not found. None if prnt.
         """
         if cpe := self.client.cpes.find_one({"cpe_name": cpe_name}):
-            print(cpe_str(cpe))
+            if prnt:
+                print(cpe_str(cpe))
+                return None
+            else:
+                return cpe
         else:
-            print(f"{cpe_name} not found.")
+            if prnt:
+                print(f"{cpe_name} not found.")
+            return None
 
-    def q_cpe_matches(self, cpe_id: str) -> Cursor:
-        """
-        Queries CPE matches information given CPE ID.
 
-        :param cpe_id: The CPE ID
-        :return: Dict of CPE.
+    def cpe_matches(self, cpe_id: str, prnt: bool = False) -> Cursor[CPESchema] | None:
         """
-        return self.client.cpematches.find({"matches": cpe_id})
+        Queries/Prints CPE matches information given CPE reference _id.
 
-    def q_cpe_to_cves(self, cpe_id: str) -> Cursor[CVESchema]:
+        :param cpe_id: The CPE _id
+        :param prnt: If True, prints out the CPE matches information instead of returning CPE matches. Always returns None, Defaults to False.
+        :return: List of matches in CPESchema, None if not found. None if prnt.
         """
-        Queries CPE matches information given CPE ID.
+        if matches := self.client.cpematches.find({"matches": cpe_id}):
+            if prnt:
+                for match in matches:
+                    print(cpe_str(match))
+                return None
+            else:
+                return matches
+        else:
+            if prnt:
+                print(f"{cpe_id} not found.")
+            return None
 
-        :param cpe_id: The CPE ID
-        :return: Cursor for all CVEs
+    def cpe_ref_to_cves(self, cpe_id: str, prnt: bool = False) -> Cursor[CVESchema] | None:
         """
-        return self.client.cves.find({
+        Queries CPE matches information given CPE reference _id.
+
+        :param cpe_id: The CPE reference _id
+        :param prnt: If True, prints out the CVEs instead of returning Cursor for CVEs. Always returns None, Defaults to False.
+        :return: Cursor for all CVEs, None if not found. None if prnt.
+        """
+        if cves := self.client.cves.find({
             "configurations.nodes.cpeMatch": {
                 "$elemMatch": {
                     "matchCriteriaId": {
-                        "$in": [match["_id"] for match in self.q_cpe_matches(cpe_id)]
+                        "$in": [match["_id"] for match in self.cpe_matches(cpe_id)]
                     }
                 }
             }
-        })
+        }):
+            if prnt:
+                for cve in stringify_results(cves):
+                    print(cve)
+                return None
+            else:
+                return cves
+        else:
+            if prnt:
+                print(f"{cpe_id} not found.")
+            return None
 
-    def p_cpe_to_cves(self, cpe_id: str) -> None:
+    def cpe_name_to_cves(self, cpe_name: str, prnt: bool = False) -> Cursor[CVESchema] | None:
         """
-        Prints all CVEs given a CPE ID.
-
-        :param cpe_id: The CPE ID
-        :return: None, prints out all CVEs to console.
-        """
-        for str_cve in stringify_results(self.q_cpe_to_cves(cpe_id)):
-            print(str_cve)
-
-    def q_cpename_to_cves(self, cpe_name: str) -> Cursor[CVESchema] | None:
-        """
-        Queries CPE matches information given CPE Name.
+        Queries/Prints CPE matches information given CPE Name (CPE String).
 
         :param cpe_name: The CPE name
-        :return: Cursor for all CVEs
+        :param prnt: If True, prints out the CVEs instead of returning Cursor for CVEs. Always returns None, Defaults to False.
+        :return: Cursor for all CVEs, None if not found. None if prnt.
         """
         cpe = self.client.cpes.find_one({"cpe_name": cpe_name})
         if not cpe:
+            if prnt:
+                print(f"{cpe_name} not found.")
             return None
-        return self.q_cpe_to_cves(cpe["_id"])
 
-    def p_cpename_to_cves(self, cpe_name: str) -> None:
-        """
-        Prints all CVEs given a CPE Name.
-
-        :param cpe_name: The CPE Name
-        :return: None, prints out all CVEs to console.
-        """
-        for str_cve in stringify_results(self.q_cpename_to_cves(cpe_name)):
-            print(str_cve)
+        if cves := self.cpe_ref_to_cves(cpe["_id"]):
+            if prnt:
+                for cve in stringify_results(cves):
+                    print(cve)
+                return None
+            else:
+                return cves
+        else:
+            if prnt:
+                print(f"CVEs for {cpe_name} not found.")
+            return None
 
     def ml_find_cpe(
             self,
@@ -213,7 +251,7 @@ if __name__ == '__main__':
     op_select.add_argument("--cpe",
                            help="print CPE information about a specific CPE by CPE name")
     op_select.add_argument("--cpeid",
-                           help="print CPE information about a specific CPE by CPE ID")
+                           help="print CPE information about a specific CPE by CPE reference _id")
     op_select.add_argument("--cve",
                            help="print CVE information about a specfic CVE by CVE ID")
     op_select.add_argument("--cpe2cves",
@@ -235,12 +273,12 @@ if __name__ == '__main__':
     query = VaultQuery(mngo_client)
 
     if args.cve:
-        query.p_cve_id(args.cve)
+        query.cve_id(args.cve, prnt=True)
     elif args.cpe:
-        query.p_cpe_name(args.cpe)
+        query.cpe_name(args.cpe, prnt=True)
     elif args.cpeid:
-        query.p_cpe_id(args.cpeid)
+        query.cpe_ref(args.cpeid, prnt=True)
     elif args.cpe2cves:
-        query.p_cpename_to_cves(args.cpe2cves)
+        query.cpe_name_to_cves(args.cpe2cves, prnt=True)
     elif args.str2cpes:
         query.p_ml_find_cpe(args.str2cpes)
