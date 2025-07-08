@@ -13,19 +13,36 @@ from pymongo.cursor import Cursor
 from rapidfuzz.fuzz import WRatio
 
 # pylint: disable=E0401,E0611
-from .lib import VaultArgumentParser, VaultConfig, VaultMongoClient, s_print
-from .lib import BColors as C
-from .lib.api import CPESchema, CVESchema, stringify_results, cpe_str, cve_str
+from vulnvault.lib import VaultArgumentParser, VaultConfig, VaultMongoClient, s_print
+from vulnvault.lib import BColors as C
+from vulnvault.lib.api import CPESchema, CVESchema, stringify_results, cpe_str, cve_str
 
 
 class VaultQuery:
     """
     Main class to query items from the Vault MongoDB
     """
-    client: VaultMongoClient
+    _mongo: VaultMongoClient
 
-    def __init__(self, mongo_client: VaultMongoClient) -> None:
-        self.client = mongo_client
+    def __init__(
+        self,
+        mongo_client: VaultMongoClient = None,
+        config_path: str = "config.json",
+        suppress_prnt: bool = False
+    ) -> None:
+        if mongo_client:
+            if not suppress_prnt:
+                s_print("Connecting to MongoDB...")
+            self._mongo = mongo_client.raise_if_not_connected()
+            if not suppress_prnt:
+                C.print_success("Connected.")
+        else:
+            if not suppress_prnt:
+                s_print("Connecting to MongoDB...")
+            self._mongo = VaultMongoClient(VaultConfig(config_path)).raise_if_not_connected()
+            if not suppress_prnt:
+                C.print_success("Connected.")
+
 
     def cve_id(self, cve_id: str, prnt: bool = False) -> CVESchema | None:
         """
@@ -35,7 +52,7 @@ class VaultQuery:
         :param prnt: If True, prints out the CVE information instead of returning CVE. Always returns None, Defaults to False.
         :return CVE Record in CVESchema, None if not found. None if prnt.
         """
-        if cve := self.client.cves.find_one({"_id": cve_id}):
+        if cve := self._mongo.cves.find_one({"_id": cve_id}):
             if prnt:
                 print(cve_str(cve))
                 return None
@@ -54,7 +71,7 @@ class VaultQuery:
         :param prnt: If True, prints out the CPE information instead of returning CPE. Always returns None, Defaults to False.
         :returns CPE Record in CPESchema, None if not found. None if prnt.
         """
-        if cpe := self.client.cpes.find_one({"_id": cpe_id}):
+        if cpe := self._mongo.cpes.find_one({"_id": cpe_id}):
             if prnt:
                 print(cpe_str(cpe))
                 return None
@@ -73,7 +90,7 @@ class VaultQuery:
         :param prnt: If True, prints out the CVE information instead of returning CVE. Always returns None, Defaults to False.
         :returns CVE Record in CVESchema, None if not found. None if prnt.
         """
-        if cpe := self.client.cpes.find_one({"cpe_name": cpe_name}):
+        if cpe := self._mongo.cpes.find_one({"cpe_name": cpe_name}):
             if prnt:
                 print(cpe_str(cpe))
                 return None
@@ -93,7 +110,7 @@ class VaultQuery:
         :param prnt: If True, prints out the CPE matches information instead of returning CPE matches. Always returns None, Defaults to False.
         :return: List of matches in CPESchema, None if not found. None if prnt.
         """
-        if matches := self.client.cpematches.find({"matches": cpe_id}):
+        if matches := self._mongo.cpematches.find({"matches": cpe_id}):
             if prnt:
                 for match in matches:
                     print(cpe_str(match))
@@ -113,7 +130,7 @@ class VaultQuery:
         :param prnt: If True, prints out the CVEs instead of returning Cursor for CVEs. Always returns None, Defaults to False.
         :return: Cursor for all CVEs, None if not found. None if prnt.
         """
-        if cves := self.client.cves.find({
+        if cves := self._mongo.cves.find({
             "configurations.nodes.cpeMatch": {
                 "$elemMatch": {
                     "matchCriteriaId": {
@@ -141,7 +158,7 @@ class VaultQuery:
         :param prnt: If True, prints out the CVEs instead of returning Cursor for CVEs. Always returns None, Defaults to False.
         :return: Cursor for all CVEs, None if not found. None if prnt.
         """
-        cpe = self.client.cpes.find_one({"cpe_name": cpe_name})
+        cpe = self._mongo.cpes.find_one({"cpe_name": cpe_name})
         if not cpe:
             if prnt:
                 print(f"{cpe_name} not found.")
@@ -212,7 +229,7 @@ class VaultQuery:
         else:
             raise ValueError(f"frmt \"{frmt}\" is not supported")
 
-        for cpe in self.client.cpes.find({}):
+        for cpe in self._mongo.cpes.find({}):
             match_scores = [WRatio(srch_str, db_itm_gttr(cpe)) for srch_str, db_itm_gttr in fetcher]
             if (score := get_weighted_score(match_scores)) > threshold:
                 matches.append((score, cpe))
@@ -262,15 +279,13 @@ if __name__ == '__main__':
     args = arg_parse.parse_args()
 
     config = VaultConfig(args.config)
-    s_print("Connecting to MongoDB...")
     mngo_client = VaultMongoClient(config).raise_if_not_connected()
-    C.print_success("Connected.")
 
-    s_print("Ensuring NLTK Model downloaded...")
+    print("Ensuring NLTK Model downloaded...")
     nltk.download(config.punkt_url, print_error_to=stdout)
     C.print_success("Complete.")
 
-    query = VaultQuery(mngo_client)
+    query = VaultQuery(mongo_client=mngo_client)
 
     if args.cve:
         query.cve_id(args.cve, prnt=True)

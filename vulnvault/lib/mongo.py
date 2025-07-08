@@ -19,6 +19,7 @@ class VaultMongoClient(MongoClient):
     A specific MongoClient dedicated to working with VaultConfig.
     """
     def __init__(self, config: VaultConfig) -> None:
+        self.vv_config = config
         super().__init__(f"mongodb://{config.mongo_host}/nvd", config.mongo_port)
         self.db: Database = self.get_default_database()
         self.meta: Collection = self.db.metadata

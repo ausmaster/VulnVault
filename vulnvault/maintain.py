@@ -8,18 +8,14 @@ from typing import Callable
 from pymongo import ReplaceOne
 
 # pylint: disable=E0401,E0611
-from .lib import (
+from vulnvault.lib import (
     NVDFetch,
     VaultArgumentParser,
     VaultConfig,
     VaultMongoClient,
     s_print
 )
-from .lib import BColors as C
-
-vault_mongo: VaultMongoClient
-nvd_api: NVDFetch
-arg_to_print_and_func: dict[str, tuple[str, Callable]]
+from vulnvault.lib import BColors as C
 
 
 class MetadataNotFoundException(Exception):
@@ -27,126 +23,147 @@ class MetadataNotFoundException(Exception):
     Exception raised when a metadata entry cannot be found.
     """
 
+class VaultMaintenance:
+    _mongo: VaultMongoClient
+    _arg_to_print_and_func: dict[str, tuple[str, Callable]]
 
-def setup(config_path: str) -> tuple[VaultMongoClient, NVDFetch, dict[str, tuple[str, Callable]]]:
-    """
-    Returns values for maintain.py global variables.
+    def __init__(
+        self,
+        mongo_client: VaultMongoClient | None = None,
+        config_path: str = "config.json",
+        suppress_prnt: bool = False,
+    ) -> None:
+        config: VaultConfig
+        if mongo_client:
+            if not suppress_prnt:
+                s_print("Connecting to MongoDB...")
+            self._mongo = mongo_client.raise_if_not_connected()
+            if not suppress_prnt:
+                C.print_success("Connected.")
+            config = mongo_client.vv_config
+        else:
+            config = VaultConfig(config_path)
+            if not suppress_prnt:
+                s_print("Connecting to MongoDB...")
+            self._mongo = VaultMongoClient(config).raise_if_not_connected()
+            if not suppress_prnt:
+                C.print_success("Connected.")
 
-    :param config_path: Configuration file path
-    :return: (VAULT_MONGO, NVDFetch, ARGS_TO_PRINT_AND_FUNC)
-    """
-    config = VaultConfig(config_path)
-    s_print("Connecting to MongoDB...")
-    client = VaultMongoClient(config).raise_if_not_connected()
-    C.print_success("Connected.")
-    api = NVDFetch(config)
-    return client, api, {
-        "cpes": ("CPEs", api.fetch_cpes),
-        "cves": ("CVEs", api.fetch_cves),
-        "cpematches": ("CPE matches", api.fetch_cpe_matches),
-    }
+        api = NVDFetch(config)
+        self._arg_to_print_and_func = {
+            "cpes": ("CPEs", api.fetch_cpes),
+            "cves": ("CVEs", api.fetch_cves),
+            "cpematches": ("CPE matches", api.fetch_cpe_matches),
+        }
+        self._suppress_prnt = suppress_prnt
 
+    def initial_load(self, now: Datetime) -> None:
+        """
+        Provides the initial procedure of fetching and insering data into
+        all available collections from NVD.
 
-def initial_load(now: Datetime) -> None:
-    """
-    Provides the initial procedure of fetching and insering data into
-    all available collections from NVD.
-
-    :param now: DateTime now
-    :return: None
-    """
-    vault_mongo.db.drop_collection("metadata")
-    insert_collection("cpes", now, drop=True)
-    update_metadata("cpes", now)
-    insert_collection("cves", now, drop=True)
-    update_metadata("cves", now)
-    insert_collection("cpematches", now, drop=True)
-    update_metadata("cpematches", now)
-
-
-def insert_collection(coll: str, now: Datetime, drop: bool = False, **kwargs) -> None:
-    """
-    Procedure for inserting API entries.
-
-    :param coll: Collection name
-    :param now: DateTime now
-    :param drop: Drop collection before inserting entries
-    :param kwargs: API keyward arguments
-    :return: None
-    """
-    print_coll_str, api_call = arg_to_print_and_func[coll]
-    if drop:
-        drop_collection(coll)
-    C.print_underline(f"Starting Collection and Insertion Procedure for {print_coll_str}")
-    results = api_call(**kwargs)
-    C.print_success("Collection complete.")
-    s_print(f"Inserting {print_coll_str}...")
-    getattr(vault_mongo, coll).insert_many(results)
-    C.print_success("Collection and Insertion Complete.")
-    update_metadata(coll, now)
+        :param now: DateTime now
+        :return: None
+        """
+        self._mongo.db.drop_collection("metadata")
+        self.insert_collection("cpes", now, drop=True)
+        self.update_metadata("cpes", now)
+        self.insert_collection("cves", now, drop=True)
+        self.update_metadata("cves", now)
+        self.insert_collection("cpematches", now, drop=True)
+        self.update_metadata("cpematches", now)
 
 
-def drop_collection(coll: str) -> None:
-    """
-    Procedure for dropping a selected collection.
+    def insert_collection(self, coll: str, now: Datetime, drop: bool = False, **kwargs) -> None:
+        """
+        Procedure for inserting API entries.
 
-    :param coll: Collection name
-    :return: None
-    """
-    print_coll_str, _ = arg_to_print_and_func[coll]
-    s_print(f"Dropping {print_coll_str} collection...")
-    vault_mongo.db.drop_collection(coll)
-    C.print_success("Dropped.")
+        :param coll: Collection name
+        :param now: DateTime now
+        :param drop: Drop collection before inserting entries
+        :param kwargs: API keyward arguments
+        :return: None
+        """
+        print_coll_str, api_call = self._arg_to_print_and_func[coll]
+        if drop:
+            self.drop_collection(coll)
+        if not self._suppress_prnt:
+            C.print_underline(f"Starting Collection and Insertion Procedure for {print_coll_str}")
+        results = api_call(**kwargs)
+        if not self._suppress_prnt:
+            C.print_success("Collection complete.")
+            s_print(f"Inserting {print_coll_str}...")
+        getattr(self._mongo, coll).insert_many(results)
+        if not self._suppress_prnt:
+            C.print_success("Collection and Insertion Complete.")
+        self.update_metadata(coll, now)
 
 
-def update_collection(coll: str, now: Datetime, **kwargs) -> None:
-    """
-    Procedure for updating collections.
+    def drop_collection(self, coll: str) -> None:
+        """
+        Procedure for dropping a selected collection.
 
-    :param coll: Collection name
-    :param now: DateTime now
-    :param kwargs: API keyward arguments
-    :return: None
-    """
-    print_coll_str, api_call = arg_to_print_and_func[coll]
-    C.print_underline(f"Updating {print_coll_str} collection")
-    metadata = vault_mongo.meta.find_one({"collection": coll})
-    if not metadata or not (last_updated := metadata.get("updated")):
-        raise MetadataNotFoundException(f"No {coll} metadata found")
-    results: list[ReplaceOne] = [
-        ReplaceOne({"_id": x["_id"]}, x, upsert=True)
-        for x in api_call(
-            last_mod_start_date=last_updated.isoformat(),
-            last_mod_end_date=now.isoformat(),
-            **kwargs
+        :param coll: Collection name
+        :return: None
+        """
+        print_coll_str, _ = self._arg_to_print_and_func[coll]
+        if not self._suppress_prnt:
+            s_print(f"Dropping {print_coll_str} collection...")
+        self._mongo.db.drop_collection(coll)
+        if not self._suppress_prnt:
+            C.print_success("Dropped.")
+
+
+    def update_collection(self, coll: str, now: Datetime, **kwargs) -> None:
+        """
+        Procedure for updating collections.
+
+        :param coll: Collection name
+        :param now: DateTime now
+        :param kwargs: API keyward arguments
+        :return: None
+        """
+        print_coll_str, api_call = self._arg_to_print_and_func[coll]
+        if not self._suppress_prnt:
+            C.print_underline(f"Updating {print_coll_str} collection")
+        metadata = self._mongo.meta.find_one({"collection": coll})
+        if not metadata or not (last_updated := metadata.get("updated")):
+            raise MetadataNotFoundException(f"No {coll} metadata found")
+        results: list[ReplaceOne] = [
+            ReplaceOne({"_id": x["_id"]}, x, upsert=True)
+            for x in api_call(
+                last_mod_start_date=last_updated.isoformat(),
+                last_mod_end_date=now.isoformat(),
+                **kwargs
+            )
+        ]
+        if results:
+            counts = self._mongo.cves.bulk_write(results)
+            if not self._suppress_prnt:
+                C.print_success("\n".join((
+                    f"{counts.upserted_count} {print_coll_str} Upserted."
+                    if counts.upserted_count else "",
+                    f"{counts.modified_count} {print_coll_str} Modified."
+                    if counts.modified_count else "",
+                    f"{counts.inserted_count} {print_coll_str} Inserted."
+                    if counts.inserted_count else ""
+                )))
+        elif not self._suppress_prnt:
+            C.print_fail(f"No {print_coll_str} to update.")
+        self.update_metadata(coll, now)
+
+
+    def update_metadata(self, coll: str, now: Datetime) -> None:
+        """
+        Updates the metadata for the selected collection.
+
+        :return: None
+        """
+        self._mongo.meta.update_one(
+            {"collection": coll},
+            {"$set": {"updated": now}},
+            upsert=True
         )
-    ]
-    if results:
-        counts = vault_mongo.cves.bulk_write(results)
-        C.print_success("\n".join((
-            f"{counts.upserted_count} {print_coll_str} Upserted."
-            if counts.upserted_count else "",
-            f"{counts.modified_count} {print_coll_str} Modified."
-            if counts.modified_count else "",
-            f"{counts.inserted_count} {print_coll_str} Inserted."
-            if counts.inserted_count else ""
-        )))
-    else:
-        C.print_fail(f"No {print_coll_str} to update.")
-    update_metadata(coll, now)
-
-
-def update_metadata(collection: str, datetime: Datetime) -> None:
-    """
-    Updates the metadata for the selected collection.
-
-    :return: None
-    """
-    vault_mongo.meta.update_one(
-        {"collection": collection},
-        {"$set": {"updated": datetime}},
-        upsert=True
-    )
 
 
 if __name__ == "__main__":
@@ -187,26 +204,26 @@ if __name__ == "__main__":
         for i in range(0, len(api_options), 2)
     }
 
-    vault_mongo, nvd_api, arg_to_print_and_func = setup(args.config)
+    maintain = VaultMaintenance(config_path=args.config)
 
     d_now = Datetime.now()
     if args.init:
-        initial_load(d_now)
+        maintain.initial_load(d_now)
     elif args.fetchcpes:
-        insert_collection("cpes", d_now, drop=args.purge, **api_options)
+        maintain.insert_collection("cpes", d_now, drop=args.purge, **api_options)
     elif args.fetchcves:
-        insert_collection("cves", d_now, drop=args.purge, **api_options)
+        maintain.insert_collection("cves", d_now, drop=args.purge, **api_options)
     elif args.fetchcpematches:
-        insert_collection("cpematches", d_now, drop=args.purge, **api_options)
+        maintain.insert_collection("cpematches", d_now, drop=args.purge, **api_options)
     elif args.dropcpes:
-        drop_collection("cpes")
+        maintain.drop_collection("cpes")
     elif args.dropcves:
-        drop_collection("cves")
+        maintain.drop_collection("cves")
     elif args.dropcpematches:
-        drop_collection("cpematches")
+        maintain.drop_collection("cpematches")
     elif args.updatecpes:
-        update_collection("cpes", d_now, **api_options)
+        maintain.update_collection("cpes", d_now, **api_options)
     elif args.updatecves:
-        update_collection("cves", d_now, **api_options)
+        maintain.update_collection("cves", d_now, **api_options)
     elif args.updatecpematches:
-        update_collection("cpematches", d_now, **api_options)
+        maintain.update_collection("cpematches", d_now, **api_options)
