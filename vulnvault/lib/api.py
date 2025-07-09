@@ -12,8 +12,9 @@ from re import split
 from textwrap import wrap
 from threading import Lock
 from time import time, sleep
-from typing import Any, Callable, TypedDict, Final, Generator
+from typing import Any, Callable, TypedDict, Final, Generator, AsyncGenerator
 
+from pymongo.asynchronous.cursor import AsyncCursor
 from pymongo.cursor import Cursor
 from requests import get, HTTPError, PreparedRequest, Response, Session
 
@@ -538,15 +539,33 @@ Other: {cpe["other"]}
 """
 
 
-def stringify_results(cursor: Cursor[CVESchema] | Cursor[CPESchema]) -> Generator[str, None, None]:
+def stringify_results(
+        cursor: Cursor[CVESchema] | Cursor[CPESchema]
+) -> Generator[str, None, None]:
     """
     Generator function that creates a printable representation of each CVE.
 
     :param cursor: Results cursor from Pymongo
     :return: Yield string representation of CVE
     """
-    type_func = Callable[[CVESchema], str] | Callable[[CPESchema], str]  # noqa
-    func: type_func = cve_str if cursor.collection.name == "cves" \
-        else cpe_str
+    func: Callable[[CVESchema], str] | Callable[[CPESchema], str] = (
+        cve_str if cursor.collection.name == "cves" else cpe_str
+    )
     for schema in cursor:
+        yield func(schema)  # type: ignore
+
+async def a_stringify_results(
+        cursor: AsyncCursor[CVESchema] | AsyncCursor[CPESchema]
+) -> AsyncGenerator[str, None]:
+    """
+    Async generator function that creates a printable representation of each CVE/CPE.
+
+    :param cursor: Async results cursor from Motor
+    :return: Async yield string representation of CVE/CPE
+    """
+    func: Callable[[CVESchema], str] | Callable[[CPESchema], str] = (
+        cve_str if cursor.collection.name == "cves" else cpe_str
+    )
+
+    async for schema in cursor:
         yield func(schema)  # type: ignore

@@ -2,5 +2,5 @@
 from .api import NVDFetch
 from .argparser import VaultArgumentParser
 from .config import VaultConfig
-from .mongo import VaultMongoClient
+from .mongo import VaultMongoClient, AsyncVaultMongoClient
 from .utils import *
