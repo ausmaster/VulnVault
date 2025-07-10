@@ -63,70 +63,117 @@ class AsyncVaultQuery(BaseVaultQuery):
             self._connected = True
 
 
-    async def cpe_matches(self, cpe_id: str, prnt: bool = False) -> AsyncCursor[CPESchema] | None:
+    async def cve_id(
+            self,
+            cve_id: str,
+            prnt: bool = False,
+            cve_proj: dict[str, Any] | list[str] | None = None
+    ) -> CVESchema | None:
         """
-        Queries/Prints CPE matches information given CPE reference _id.
+        Queries/Prints CVE information given actual CVE ID (_id aligns to the actual NVD CVE ID)
 
-        :param cpe_id: The CPE _id
-        :param prnt: If True, prints out the CPE matches information instead of returning CPE matches. Always returns None, Defaults to False.
-        :return: List of matches in CPESchema, None if not found. None if prnt.
+        :param cve_id: The CVE ID
+        :param prnt: If True, prints out the CVE information instead of returning CVE. Always returns None, Defaults to False.
+        :return CVE Record in CVESchema, None if not found. None if prnt.
         """
-        matches = self._mongo.cpematches.find({"matches": cpe_id})
-        if matches:
+        if cve_proj is None:
+            cve_proj = {}
+
+        if cve := await self._mongo.cves.find_one({"_id": cve_id}, projection=cve_proj):
             if prnt:
-                async for match in matches:
-                    print(match)
+                print(cve_str(cve))
                 return None
             else:
-                return matches
+                return cve
+        else:
+            if prnt:
+                print(f"{cve_id} not found.")
+            return None
+
+
+    async def cpe_matches(
+            self, cpe_id: str,
+            prnt: bool = False,
+            cpematches_proj: dict[str, Any] | list[str] | None = None
+    ) -> list[CPESchema] | None:
+        """
+        Queries/Prints CPE matches information given CPE reference _id.
+        """
+        if cpematches_proj is None:
+            cpematches_proj = {}
+
+        # Convert cursor to list immediately
+        cursor = self._mongo.cpematches.find({"matches": cpe_id}, projection=cpematches_proj)
+        matches = await cursor.to_list(None)
+
+        if matches:
+            if prnt:
+                for match in matches:
+                    print(match)
+                return None
+            return matches
         else:
             if prnt:
                 print(f"{cpe_id} not found.")
             return None
 
-
-    async def cpe_ref_to_cves(self, cpe_id: str, prnt: bool = False) -> AsyncCursor[CVESchema] | None:
+    async def cpe_ref_to_cves(
+            self,
+            cpe_id: str,
+            prnt: bool = False,
+            cve_proj: dict[str, Any] | list[str] | None = None
+    ) -> list[CVESchema] | None:
         """
         Queries CPE matches information given CPE reference _id.
-
-        :param cpe_id: The CPE reference _id
-        :param prnt: If True, prints out the CVEs instead of returning Cursor for CVEs. Always returns None, Defaults to False.
-        :return: Cursor for all CVEs, None if not found. None if prnt.
         """
-        cpe_matches = await self.cpe_matches(cpe_id)
-        cves = self._mongo.cves.find({
-            "configurations.nodes.cpeMatch": {
-                "$elemMatch": {
-                    "matchCriteriaId": {
-                        "$in": [match["_id"] for match in cpe_matches]
-                    }
+        if cve_proj is None:
+            cve_proj = {}
+
+        # Get matches as a list first
+        matches = await self.cpe_matches(cpe_id)
+        if not matches:
+            if prnt:
+                print(f"{cpe_id} not found.")
+            return None
+
+        # Create match_ids list from matches
+        match_ids = [match["_id"] for match in matches]
+
+        # Run query and convert cursor to list
+        cursor = self._mongo.cves.find(
+            {
+                "configurations.nodes.cpeMatch": {
+                    "$elemMatch": {"matchCriteriaId": {"$in": match_ids}}
                 }
-            }
-        })
+            },
+            projection=cve_proj
+        )
+        cves = await cursor.to_list(None)
 
         if cves:
             if prnt:
-                async for cve in a_stringify_results(cves):
-                    print(cve)
+                # Assuming a_stringify_results can handle a list
+                results = await a_stringify_results(cves)
+                for result in results:
+                    print(result)
                 return None
-            else:
-                return cves
+            return cves
         else:
             if prnt:
-                print(f"{cpe_id} not found.")
+                print(f"CVEs for {cpe_id} not found.")
             return None
 
-
     async def cpe_name_to_cves(
-        self, cpe_name: str, prnt: bool = False
-    ) -> AsyncCursor[CVESchema] | None:
+            self,
+            cpe_name: str,
+            prnt: bool = False,
+            cve_proj: dict[str, Any] | list[str] | None = None
+    ) -> list[CVESchema] | None:
         """
         Queries/Prints CPE matches information given CPE Name (CPE String).
-
-        :param cpe_name: The CPE name
-        :param prnt: If True, prints out the CVEs instead of returning Cursor for CVEs. Always returns None, Defaults to False.
-        :return: Cursor for all CVEs, None if not found. None if prnt.
         """
+        if cve_proj is None:
+            cve_proj = {}
 
         cpe = await self._mongo.cpes.find_one({"cpe_name": cpe_name})
         if not cpe:
@@ -134,13 +181,14 @@ class AsyncVaultQuery(BaseVaultQuery):
                 print(f"{cpe_name} not found.")
             return None
 
-        if cves := await self.cpe_ref_to_cves(cpe["_id"]):
+        # Now this will return a list, not a cursor
+        cves = await self.cpe_ref_to_cves(cpe["_id"], cve_proj=cve_proj)
+        if cves:
             if prnt:
-                async for cve in a_stringify_results(cves):
-                    print(cve)
+                for cve in cves:
+                    print(cve_str(cve))
                 return None
-            else:
-                return cves
+            return cves
         else:
             if prnt:
                 print(f"CVEs for {cpe_name} not found.")
