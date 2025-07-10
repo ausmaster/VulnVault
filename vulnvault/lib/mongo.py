@@ -27,9 +27,9 @@ class VaultMongoClient(MongoClient):
     cpematches: Collection
     vv_config: VaultConfig
 
-    def __init__(self, config: VaultConfig) -> None:
+    def __init__(self, config: VaultConfig, **kwargs) -> None:
         self.vv_config = config
-        super().__init__(f"mongodb://{config.mongo_host}/nvd", config.mongo_port)
+        super().__init__(f"mongodb://{config.mongo_host}/nvd", config.mongo_port, **kwargs)
         self.db: Database = self.get_default_database()
         self.meta: Collection = self.db.metadata
         self.cpes: Collection[CPESchema] = self.db.cpes
@@ -65,9 +65,9 @@ class AsyncVaultMongoClient(AsyncMongoClient):
     cpematches: AsyncCollection
     vv_config: VaultConfig
 
-    def __init__(self, config: VaultConfig) -> None:
+    def __init__(self, config: VaultConfig, **kwargs) -> None:
         self.vv_config = config
-        super().__init__(f"mongodb://{config.mongo_host}/nvd", config.mongo_port)
+        super().__init__(f"mongodb://{config.mongo_host}/nvd", config.mongo_port, **kwargs)
         self.db: AsyncDatabase = self.get_default_database()
         self.meta: AsyncCollection = self.db.metadata
         self.cpes: AsyncCollection[CPESchema] = self.db.cpes

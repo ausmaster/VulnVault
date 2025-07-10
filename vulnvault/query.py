@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from operator import itemgetter
 from sys import stdout
-from typing import Callable, Literal, Generator
+from typing import Callable, Literal, Generator, Any, cast
 
 import nltk
 from nltk.tokenize import word_tokenize
@@ -31,6 +31,122 @@ from vulnvault.lib.api import (
     a_stringify_results,
 )
 
+class BaseVaultQuery:
+    _connected: bool
+
+
+class AsyncVaultQuery(BaseVaultQuery):
+    _mongo: AsyncVaultMongoClient
+
+    def __init__(
+        self,
+        mongo_client: AsyncVaultMongoClient | None = None,
+        config_path: str = "config.json",
+        suppress_prnt: bool = False,
+    ) -> None:
+        super().__init__()
+
+        if mongo_client and not isinstance(mongo_client, AsyncVaultMongoClient):
+            raise TypeError("mongo_client must be an instance of AsyncVaultMongoClient")
+        else:
+            if not suppress_prnt:
+                print(
+                    "Cannot connect to MongoDB ahead of time in async mode. "
+                    "Run query first to establish connection."
+                )
+            self._mongo = mongo_client if mongo_client else AsyncVaultMongoClient(VaultConfig(config_path))
+        self._connected = False
+
+    async def connect(self) -> None:
+        if not self._connected:
+            await self._mongo.aconnect()
+            self._connected = True
+
+
+    async def cpe_matches(self, cpe_id: str, prnt: bool = False) -> AsyncCursor[CPESchema] | None:
+        """
+        Queries/Prints CPE matches information given CPE reference _id.
+
+        :param cpe_id: The CPE _id
+        :param prnt: If True, prints out the CPE matches information instead of returning CPE matches. Always returns None, Defaults to False.
+        :return: List of matches in CPESchema, None if not found. None if prnt.
+        """
+        matches = self._mongo.cpematches.find({"matches": cpe_id})
+        if matches:
+            if prnt:
+                async for match in matches:
+                    print(match)
+                return None
+            else:
+                return matches
+        else:
+            if prnt:
+                print(f"{cpe_id} not found.")
+            return None
+
+
+    async def cpe_ref_to_cves(self, cpe_id: str, prnt: bool = False) -> AsyncCursor[CVESchema] | None:
+        """
+        Queries CPE matches information given CPE reference _id.
+
+        :param cpe_id: The CPE reference _id
+        :param prnt: If True, prints out the CVEs instead of returning Cursor for CVEs. Always returns None, Defaults to False.
+        :return: Cursor for all CVEs, None if not found. None if prnt.
+        """
+        cpe_matches = await self.cpe_matches(cpe_id)
+        cves = self._mongo.cves.find({
+            "configurations.nodes.cpeMatch": {
+                "$elemMatch": {
+                    "matchCriteriaId": {
+                        "$in": [match["_id"] for match in cpe_matches]
+                    }
+                }
+            }
+        })
+
+        if cves:
+            if prnt:
+                async for cve in a_stringify_results(cves):
+                    print(cve)
+                return None
+            else:
+                return cves
+        else:
+            if prnt:
+                print(f"{cpe_id} not found.")
+            return None
+
+
+    async def cpe_name_to_cves(
+        self, cpe_name: str, prnt: bool = False
+    ) -> AsyncCursor[CVESchema] | None:
+        """
+        Queries/Prints CPE matches information given CPE Name (CPE String).
+
+        :param cpe_name: The CPE name
+        :param prnt: If True, prints out the CVEs instead of returning Cursor for CVEs. Always returns None, Defaults to False.
+        :return: Cursor for all CVEs, None if not found. None if prnt.
+        """
+
+        cpe = await self._mongo.cpes.find_one({"cpe_name": cpe_name})
+        if not cpe:
+            if prnt:
+                print(f"{cpe_name} not found.")
+            return None
+
+        if cves := await self.cpe_ref_to_cves(cpe["_id"]):
+            if prnt:
+                async for cve in a_stringify_results(cves):
+                    print(cve)
+                return None
+            else:
+                return cves
+        else:
+            if prnt:
+                print(f"CVEs for {cpe_name} not found.")
+            return None
+
+
 
 class VaultQuery:
     """
@@ -38,20 +154,17 @@ class VaultQuery:
     """
     _mongo: VaultMongoClient | AsyncVaultMongoClient
     _async: bool
-    connected: bool
+    _connected: bool
 
     def __init__(
             self,
-            mongo_client: VaultMongoClient | AsyncVaultMongoClient = None,
+            mongo_client: VaultMongoClient | AsyncVaultMongoClient | None = None,
             config_path: str = "config.json",
             create_async: bool = False,
             suppress_prnt: bool = False
     ) -> None:
         if mongo_client:
-            if isinstance(mongo_client, AsyncVaultMongoClient):
-                self._async = True
-            else:
-                self._async = False
+            self._async = isinstance(mongo_client, AsyncVaultMongoClient)
 
             if self._async:
                 # We cannot call raise_if_not_connected() here
@@ -59,14 +172,14 @@ class VaultQuery:
                     print("Cannot connect to MongoDB ahead of time in async mode. "
                           "Run query first to establish connection.")
                 self._mongo = mongo_client
-                self.connected = False
+                self._connected = False
             else:
                 if not suppress_prnt:
                     s_print("Connecting to MongoDB...")
                 self._mongo = mongo_client.raise_if_not_connected()
                 if not suppress_prnt:
                     C.print_success("Connected.")
-                self.connected = True
+                self._connected = True
         else:
             if create_async:
                 # We cannot call raise_if_not_connected() here
@@ -76,14 +189,28 @@ class VaultQuery:
                         "Run query first to establish connection."
                     )
                 self._mongo = AsyncVaultMongoClient(VaultConfig(config_path))
-                self.connected = False
+                self._async = True
+                self._connected = False
             else:
                 if not suppress_prnt:
                     s_print("Connecting to MongoDB...")
-                self._mongo = VaultMongoClient(VaultConfig(config_path)).raise_if_not_connected()
+                self._mongo = VaultMongoClient(VaultConfig(config_path), connect=True)
                 if not suppress_prnt:
                     C.print_success("Connected.")
-                self.connected = True
+                self._async = False
+                self._connected = True
+
+
+    async def connect(self) -> None:
+        if self._async:
+            if not self._connected:
+                await self._mongo.aconnect()
+                self._connected = True
+        else:
+            if not self._connected:
+                self._mongo._connect()
+                self._connected = True
+
 
 
     def cve_id(self, cve_id: str, prnt: bool = False) -> CVESchema | None:
@@ -179,38 +306,6 @@ class VaultQuery:
             return None
 
 
-    async def a_cpe_ref_to_cves(self, cpe_id: str, prnt: bool = False) -> AsyncCursor[CVESchema] | None:
-        """
-        Queries CPE matches information given CPE reference _id.
-
-        :param cpe_id: The CPE reference _id
-        :param prnt: If True, prints out the CVEs instead of returning Cursor for CVEs. Always returns None, Defaults to False.
-        :return: Cursor for all CVEs, None if not found. None if prnt.
-        """
-        if not self._async:
-            raise RuntimeError("Cannot use a_cpe_ref_to_cves in sync mode, use cpe_ref_to_cves instead.")
-
-        if cves := (await self._mongo.cves.find({
-            "configurations.nodes.cpeMatch": {
-                "$elemMatch": {
-                    "matchCriteriaId": {
-                        "$in": [match["_id"] for match in self.cpe_matches(cpe_id)]
-                    }
-                }
-            }
-        })):
-            if prnt:
-                async for cve in a_stringify_results(cves):
-                    print(cve)
-                return None
-            else:
-                return cves
-        else:
-            if prnt:
-                print(f"{cpe_id} not found.")
-            return None
-
-
     def cpe_ref_to_cves(self, cpe_id: str, prnt: bool = False) -> Cursor[CVESchema] | None:
         """
         Queries CPE matches information given CPE reference _id.
@@ -276,39 +371,6 @@ class VaultQuery:
                 print(f"CVEs for {cpe_name} not found.")
             return None
 
-
-    async def a_cpe_name_to_cves(
-            self,
-            cpe_name: str,
-            prnt: bool = False
-    ) -> AsyncCursor[CVESchema] | None:
-        """
-        Aysnc version cpe_name_to_cves, see :meth:`VaultQuery.cpe_name_to_cves`
-
-        :param cpe_name: The CPE name
-        :param prnt: If True, prints out the CVEs instead of returning Cursor for CVEs. Always returns None, Defaults to False.
-        :return: Cursor for all CVEs, None if not found. None if prnt.
-        """
-        if not self._async:
-            raise RuntimeError("Cannot use cpe_name_to_cves in sync mode, use cpe_name_to_cves instead.")
-
-        cpe = await self._mongo.cpes.find_one({"cpe_name": cpe_name})
-        if not cpe:
-            if prnt:
-                print(f"{cpe_name} not found.")
-            return None
-
-        if cves := await self.a_cpe_ref_to_cves(cpe["_id"]):
-            if prnt:
-                async for cve in a_stringify_results(cves):
-                    print(cve)
-                return None
-            else:
-                return cves
-        else:
-            if prnt:
-                print(f"CVEs for {cpe_name} not found.")
-            return None
 
     def ml_find_cpe(
             self,

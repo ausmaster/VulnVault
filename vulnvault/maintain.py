@@ -13,7 +13,8 @@ from vulnvault.lib import (
     VaultArgumentParser,
     VaultConfig,
     VaultMongoClient,
-    s_print
+    s_print,
+    AsyncVaultMongoClient,
 )
 from vulnvault.lib import BColors as C
 
@@ -24,30 +25,63 @@ class MetadataNotFoundException(Exception):
     """
 
 class VaultMaintenance:
-    _mongo: VaultMongoClient
+    _mongo: VaultMongoClient | AsyncVaultMongoClient
+    _async: bool
+    _connected: bool
+
     _arg_to_print_and_func: dict[str, tuple[str, Callable]]
 
     def __init__(
-        self,
-        mongo_client: VaultMongoClient | None = None,
-        config_path: str = "config.json",
-        suppress_prnt: bool = False,
+            self,
+            mongo_client: VaultMongoClient | AsyncVaultMongoClient | None = None,
+            config_path: str = "config.json",
+            create_async: bool = False,
+            suppress_prnt: bool = False,
     ) -> None:
         config: VaultConfig
+
         if mongo_client:
-            if not suppress_prnt:
-                s_print("Connecting to MongoDB...")
-            self._mongo = mongo_client.raise_if_not_connected()
-            if not suppress_prnt:
-                C.print_success("Connected.")
-            config = mongo_client.vv_config
+            self._async = isinstance(mongo_client, AsyncVaultMongoClient)
+
+            if self._async:
+                # We cannot call raise_if_not_connected() here
+                if not suppress_prnt:
+                    print(
+                        "Cannot connect to MongoDB ahead of time in async mode. "
+                        "Run query first to establish connection."
+                    )
+                self._mongo = mongo_client
+                self._connected = False
+            else:
+                if not suppress_prnt:
+                    s_print("Connecting to MongoDB...")
+                self._mongo = mongo_client.raise_if_not_connected()
+                if not suppress_prnt:
+                    C.print_success("Connected.")
+                self._connected = True
+
+            config = self._mongo.vv_config
         else:
-            config = VaultConfig(config_path)
-            if not suppress_prnt:
-                s_print("Connecting to MongoDB...")
-            self._mongo = VaultMongoClient(config).raise_if_not_connected()
-            if not suppress_prnt:
-                C.print_success("Connected.")
+            if create_async:
+                # We cannot call raise_if_not_connected() here
+                if not suppress_prnt:
+                    print(
+                        "Cannot connect to MongoDB ahead of time in async mode. "
+                        "Run query first to establish connection."
+                    )
+                config = VaultConfig(config_path)
+                self._mongo = AsyncVaultMongoClient(config)
+                self._async = True
+                self._connected = False
+            else:
+                if not suppress_prnt:
+                    s_print("Connecting to MongoDB...")
+                config = VaultConfig(config_path)
+                self._mongo = VaultMongoClient(config).raise_if_not_connected()
+                if not suppress_prnt:
+                    C.print_success("Connected.")
+                self._async = False
+                self._connected = True
 
         api = NVDFetch(config)
         self._arg_to_print_and_func = {
