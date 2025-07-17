@@ -12,7 +12,7 @@ authors = [
 readme = "README.md"
 requires-python = ">=3.8"
 dependencies = [
-    "pymongo~=4.9.1",
+    "pymongo>=4.9.1",
     "requests~=2.32.2",
     "nltk~=3.9.1",
     "rapidfuzz~=3.9.3"
