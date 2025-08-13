@@ -5,7 +5,10 @@ from __future__ import annotations
 from datetime import datetime as Datetime
 from typing import Callable
 
+from time import sleep
+
 from pymongo import ReplaceOne
+from pymongo.errors import AutoReconnect, BulkWriteError, OperationFailure
 
 # pylint: disable=E0401,E0611
 from vulnvault.lib import (
@@ -90,6 +93,7 @@ class VaultMaintenance:
             "cpematches": ("CPE matches", api.fetch_cpe_matches),
         }
         self._suppress_prnt = suppress_prnt
+        self._config = config
 
     def initial_load(self, now: Datetime) -> None:
         """
@@ -127,10 +131,49 @@ class VaultMaintenance:
         if not self._suppress_prnt:
             C.print_success("Collection complete.")
             s_print(f"Inserting {print_coll_str}...")
-        getattr(self._mongo, coll).insert_many(results)
+        self._insert_many_with_retry(coll, results)
         if not self._suppress_prnt:
             C.print_success("Collection and Insertion Complete.")
         self.update_metadata(coll, now)
+
+    def _insert_many_with_retry(self, coll: str, docs: list[dict]) -> None:
+        batch_size = self._config.insert_batch_size
+        total_batches = (len(docs) + batch_size - 1) // batch_size
+        inserted = 0
+        for i in range(0, len(docs), batch_size):
+            batch = docs[i:i + batch_size]
+            delay = self._config.conn_retry_delay
+            for attempt in range(1, self._config.conn_retries + 1):
+                try:
+                    try:
+                        getattr(self._mongo, coll).insert_many(batch, ordered=False, bypass_document_validation=True)
+                    except OperationFailure as ofe:
+                        if "bypassDocumentValidation" in str(ofe):
+                            getattr(self._mongo, coll).insert_many(batch, ordered=False)
+                        else:
+                            raise
+                    inserted += len(batch)
+                    if not self._suppress_prnt:
+                        print(f"Inserting {coll}: batch {i // batch_size + 1}/{total_batches} ({inserted}/{len(docs)} docs)", flush=True)
+                    break
+                except BulkWriteError as bwe:
+                    # Ignore duplicate key errors, re-raise anything else
+                    write_errors = bwe.details.get("writeErrors", []) if getattr(bwe, "details", None) else []
+                    non_dup = [e for e in write_errors if e.get("code") != 11000]
+                    if non_dup:
+                        raise
+                    inserted += len(batch)
+                    if not self._suppress_prnt:
+                        print(f"Duplicate key errors encountered on insert_many batch {i // batch_size + 1}, continuing.", flush=True)
+                        print(f"Inserting {coll}: batch {i // batch_size + 1}/{total_batches} ({inserted}/{len(docs)} docs)", flush=True)
+                    break
+                except AutoReconnect as err:
+                    if attempt == self._config.conn_retries:
+                        raise
+                    if not self._suppress_prnt:
+                        print(f"AutoReconnect on insert_many batch {i // batch_size + 1}, retry {attempt} in {delay}s: {err}")
+                    sleep(delay)
+                    delay *= self._config.conn_retry_delay_mult
 
 
     def drop_collection(self, coll: str) -> None:
@@ -172,15 +215,43 @@ class VaultMaintenance:
             )
         ]
         if results:
-            counts = self._mongo.cves.bulk_write(results)
+            total_inserted = 0
+            total_modified = 0
+            total_upserted = 0
+            batch_size = self._config.insert_batch_size
+            for i in range(0, len(results), batch_size):
+                chunk = results[i:i + batch_size]
+                delay = self._config.conn_retry_delay
+                for attempt in range(1, self._config.conn_retries + 1):
+                    try:
+                        try:
+                            res = getattr(self._mongo, coll).bulk_write(
+                                chunk, ordered=False, bypass_document_validation=True
+                            )
+                        except OperationFailure as ofe:
+                            if "bypassDocumentValidation" in str(ofe):
+                                res = getattr(self._mongo, coll).bulk_write(chunk, ordered=False)
+                            else:
+                                raise
+                        total_inserted += res.inserted_count
+                        total_modified += res.modified_count
+                        total_upserted += res.upserted_count
+                        break
+                    except AutoReconnect as err:
+                        if attempt == self._config.conn_retries:
+                            raise
+                        if not self._suppress_prnt:
+                            print(f"AutoReconnect on bulk_write batch {i // batch_size + 1}, retry {attempt} in {delay}s: {err}")
+                        sleep(delay)
+                        delay *= self._config.conn_retry_delay_mult
             if not self._suppress_prnt:
                 C.print_success("\n".join((
-                    f"{counts.upserted_count} {print_coll_str} Upserted."
-                    if counts.upserted_count else "",
-                    f"{counts.modified_count} {print_coll_str} Modified."
-                    if counts.modified_count else "",
-                    f"{counts.inserted_count} {print_coll_str} Inserted."
-                    if counts.inserted_count else ""
+                    f"{total_upserted} {print_coll_str} Upserted."
+                    if total_upserted else "",
+                    f"{total_modified} {print_coll_str} Modified."
+                    if total_modified else "",
+                    f"{total_inserted} {print_coll_str} Inserted."
+                    if total_inserted else ""
                 )))
         elif not self._suppress_prnt:
             C.print_fail(f"No {print_coll_str} to update.")
@@ -200,7 +271,7 @@ class VaultMaintenance:
         )
 
 
-if __name__ == "__main__":
+def main() -> None:
     arg_parse = VaultArgumentParser(prog="VulnVault Maintenance",
                                     epilog="Specific NVD API arguments can be passed via a "
                                            "-- suffix and can be in snake_case or camelCase. "
@@ -261,3 +332,7 @@ if __name__ == "__main__":
         maintain.update_collection("cves", d_now, **api_options)
     elif args.updatecpematches:
         maintain.update_collection("cpematches", d_now, **api_options)
+
+
+if __name__ == "__main__":
+    main()

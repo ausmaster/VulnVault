@@ -29,7 +29,23 @@ class VaultMongoClient(MongoClient):
 
     def __init__(self, config: VaultConfig, **kwargs) -> None:
         self.vv_config = config
-        super().__init__(f"mongodb://{config.mongo_host}/nvd", config.mongo_port, **kwargs)
+        if bool(config.mongo_atlas_uri) ^ bool(config.mongo_atlas_appname):
+            raise ValueError("To use Mongo Atlas, both mongo_atlas_uri and mongo_atlas_appname must be set")
+        if config.mongo_atlas_uri and config.mongo_atlas_appname:
+            uri = (
+                f"{config.mongo_atlas_uri}/nvd?"
+                f"retryWrites=true&"
+                f"w={config.mongo_atlas_write_concern}&"
+                f"appName={config.mongo_atlas_appname}&"
+                f"socketTimeoutMS=300000"
+                f"{f'&compressors={config.compressors}' if config.compressors else ''}"
+            )
+            super().__init__(uri)
+        else:
+            local_kwargs = dict(**kwargs)
+            if config.compressors:
+                local_kwargs["compressors"] = [config.compressors]
+            super().__init__(f"mongodb://{config.mongo_host}/nvd", config.mongo_port, **local_kwargs)
         self.db: Database = self.get_default_database()
         self.meta: Collection = self.db.metadata
         self.cpes: Collection[CPESchema] = self.db.cpes
@@ -67,7 +83,23 @@ class AsyncVaultMongoClient(AsyncMongoClient):
 
     def __init__(self, config: VaultConfig, **kwargs) -> None:
         self.vv_config = config
-        super().__init__(f"mongodb://{config.mongo_host}/nvd", config.mongo_port, **kwargs)
+        if bool(config.mongo_atlas_uri) ^ bool(config.mongo_atlas_appname):
+            raise ValueError("To use Mongo Atlas, both mongo_atlas_uri and mongo_atlas_appname must be set")
+        if config.mongo_atlas_uri and config.mongo_atlas_appname:
+            uri = (
+                f"{config.mongo_atlas_uri}/nvd?"
+                f"retryWrites=true&"
+                f"w={config.mongo_atlas_write_concern}&"
+                f"appName={config.mongo_atlas_appname}&"
+                f"socketTimeoutMS=300000"
+                f"{f'&compressors={config.compressors}' if config.compressors else ''}"
+            )
+            super().__init__(uri)
+        else:
+            local_kwargs = dict(**kwargs)
+            if config.compressors:
+                local_kwargs["compressors"] = [config.compressors]
+            super().__init__(f"mongodb://{config.mongo_host}/nvd", config.mongo_port, **local_kwargs)
         self.db: AsyncDatabase = self.get_default_database()
         self.meta: AsyncCollection = self.db.metadata
         self.cpes: AsyncCollection[CPESchema] = self.db.cpes

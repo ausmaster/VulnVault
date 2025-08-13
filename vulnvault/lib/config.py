@@ -28,6 +28,10 @@ class VaultConfig:  # pylint: disable=R0902,R0903
         self.mongo_host: str = "localhost"
         # MongoDB Docker Container Port
         self.mongo_port: int = 27017
+        # Mongo Atlas URI
+        self.mongo_atlas_uri: str = ""
+        # Mongo Atlas AppName (Mongo Atlas URI must be set)
+        self.mongo_atlas_appname: str = ""
         # Connection Retry Limit
         self.conn_retries: int = 3
         # Connection Retry Initial Sleep Duration in seconds
@@ -37,8 +41,14 @@ class VaultConfig:  # pylint: disable=R0902,R0903
         self.conn_retry_delay_mult: int = 3
         # Number of threads used to fetch API data
         self.fetch_threads: int = 3
-        # NLTK "Punkt Tab" Pre-trained model URL
-        self.punkt_url: str = "punkt_tab"
+        # NLTK "Punkt" pre-trained model resource name
+        self.punkt_url: str = "punkt"
+        # Insert/bulk batch size for Mongo writes
+        self.insert_batch_size: int = 1000
+        # Atlas write concern during bulk loads (e.g., "1", "majority")
+        self.mongo_atlas_write_concern: str = "majority"
+        # Network compression for Mongo driver (e.g., "zstd", "snappy", or empty for none)
+        self.compressors: str = "zstd"
 
         # All Config values from config.json are converted from camelCase to snake_case
         # overrides instance variable if exists

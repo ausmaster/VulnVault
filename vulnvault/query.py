@@ -152,10 +152,8 @@ class AsyncVaultQuery(BaseVaultQuery):
 
         if cves:
             if prnt:
-                # Assuming a_stringify_results can handle a list
-                results = await a_stringify_results(cves)
-                for result in results:
-                    print(result)
+                for cve in cves:
+                    print(cve_str(cve))
                 return None
             return cves
         else:

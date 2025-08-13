@@ -310,14 +310,7 @@ class NVDFetch:  # pylint: disable=R0902
                 cwes = {int_to_ordinal(index): find_en_desc(_cwe["description"]) for index, _cwe in
                         enumerate(cwes, start=1)}
 
-            references: dict[str, list[str]] | None
-            if references := cve.get("references"):
-                refs = {}
-                for ref in references:
-                    if ref["source"] not in refs:
-                        refs[ref["source"]] = [ref["url"]]
-                    else:
-                        refs[ref["source"]].append(ref["url"])
+            references = cve.get("references")
 
             cves.append({
                 "_id": cve["id"],

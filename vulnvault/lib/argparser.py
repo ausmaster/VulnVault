@@ -10,5 +10,5 @@ class VaultArgumentParser(ArgumentParser):
     """
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.add_argument("-c", "--config", nargs=1, default="config.json",
+        self.add_argument("-c", "--config", default="config.json", type=str,
                           help="configuration file path")
