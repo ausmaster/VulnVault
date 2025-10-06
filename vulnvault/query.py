@@ -17,6 +17,12 @@ from lib import VaultArgumentParser, VaultConfig, VaultMongoClient, s_print
 from lib import BColors as C
 from lib.api import CPESchema, CVESchema, stringify_results, cpe_str, cve_str
 
+# Try to import Rust module, fall back to None if unavailable
+try:
+    import rustyVault
+except Exception:
+    rustyVault = None
+
 
 class VaultQuery:
     """
@@ -28,219 +34,198 @@ class VaultQuery:
         self.client = mongo_client
 
     def cve_id(self, cve_id: str, prnt: bool = False) -> CVESchema | None:
-        """
-        Queries/Prints CVE information given actual CVE ID (_id aligns to the actual NVD CVE ID)
-
-        :param cve_id: The CVE ID
-        :param prnt: If True, prints out the CVE information instead of returning CVE. Always returns None, Defaults to False.
-        :return CVE Record in CVESchema, None if not found. None if prnt.
-        """
+        """Query/Print CVE by its real NVD ID (stored as _id)."""
         if cve := self.client.cves.find_one({"_id": cve_id}):
             if prnt:
                 print(cve_str(cve))
                 return None
-            else:
-                return cve
-        else:
-            if prnt:
-                print(f"{cve_id} not found.")
-            return None
+            return cve
+        if prnt:
+            print(f"{cve_id} not found.")
+        return None
 
     def cpe_ref(self, cpe_id: str, prnt: bool = False) -> CPESchema | None:
-        """
-        Queries/Prints CPE information given CPE reference _id in Mongo.
-
-        :param cpe_id: The CPE reference _id
-        :param prnt: If True, prints out the CPE information instead of returning CPE. Always returns None, Defaults to False.
-        :returns CPE Record in CPESchema, None if not found. None if prnt.
-        """
+        """Query/Print CPE by Mongo reference _id."""
         if cpe := self.client.cpes.find_one({"_id": cpe_id}):
             if prnt:
                 print(cpe_str(cpe))
                 return None
-            else:
-                return cpe
-        else:
-            if prnt:
-                print(f"{cpe_id} not found.")
-            return None
+            return cpe
+        if prnt:
+            print(f"{cpe_id} not found.")
+        return None
 
     def cpe_name(self, cpe_name: str, prnt: bool = False) -> CPESchema | None:
-        """
-        Queries/Prints CPE information given CPE Name (CPE String).
-
-        :param cpe_name: The NVD CPE Name
-        :param prnt: If True, prints out the CVE information instead of returning CVE. Always returns None, Defaults to False.
-        :returns CVE Record in CVESchema, None if not found. None if prnt.
-        """
+        """Query/Print CPE by CPE string (cpe_name)."""
         if cpe := self.client.cpes.find_one({"cpe_name": cpe_name}):
             if prnt:
                 print(cpe_str(cpe))
                 return None
-            else:
-                return cpe
-        else:
-            if prnt:
-                print(f"{cpe_name} not found.")
-            return None
+            return cpe
+        if prnt:
+            print(f"{cpe_name} not found.")
+        return None
 
-
-    def cpe_matches(self, cpe_id: str, prnt: bool = False) -> Cursor[CPESchema] | None:
+    def cpe_matches(self, cpe_id: str, prnt: bool = False) -> list[CPESchema] | None:
         """
-        Queries/Prints CPE matches information given CPE reference _id.
-
-        :param cpe_id: The CPE _id
-        :param prnt: If True, prints out the CPE matches information instead of returning CPE matches. Always returns None, Defaults to False.
-        :return: List of matches in CPESchema, None if not found. None if prnt.
+        Query/Print CPE matches for a given CPE reference _id.
+        Returns a list (materialized) so callers can safely iterate multiple times.
         """
-        if matches := self.client.cpematches.find({"matches": cpe_id}):
-            if prnt:
-                for match in matches:
-                    print(cpe_str(match))
-                return None
-            else:
-                return matches
-        else:
+        cursor = self.client.cpematches.find({"matches": cpe_id})
+        matches = list(cursor)
+        if not matches:
             if prnt:
                 print(f"{cpe_id} not found.")
             return None
+        if prnt:
+            for match in matches:
+                print(cpe_str(match))
+            return None
+        return matches
 
     def cpe_ref_to_cves(self, cpe_id: str, prnt: bool = False) -> Cursor[CVESchema] | None:
         """
-        Queries CPE matches information given CPE reference _id.
-
-        :param cpe_id: The CPE reference _id
-        :param prnt: If True, prints out the CVEs instead of returning Cursor for CVEs. Always returns None, Defaults to False.
-        :return: Cursor for all CVEs, None if not found. None if prnt.
+        Find CVEs whose configurations reference any matchCriteriaId linked to this CPE ref.
         """
-        if cves := self.client.cves.find({
-            "configurations.nodes.cpeMatch": {
-                "$elemMatch": {
-                    "matchCriteriaId": {
-                        "$in": [match["_id"] for match in self.cpe_matches(cpe_id)]
-                    }
-                }
-            }
-        }):
+        matches = self.cpe_matches(cpe_id) or []
+        match_ids = [m["_id"] for m in matches]
+        if not match_ids:
             if prnt:
-                for cve in stringify_results(cves):
-                    print(cve)
-                return None
-            else:
-                return cves
-        else:
-            if prnt:
-                print(f"{cpe_id} not found.")
+                print(f"No matches found for {cpe_id}.")
             return None
 
-    def cpe_name_to_cves(self, cpe_name: str, prnt: bool = False) -> Cursor[CVESchema] | None:
-        """
-        Queries/Prints CPE matches information given CPE Name (CPE String).
+        cves = self.client.cves.find({
+            "configurations.nodes.cpeMatch": {
+                "$elemMatch": {"matchCriteriaId": {"$in": match_ids}}
+            }
+        })
+        if prnt:
+            for cve in stringify_results(cves):
+                print(cve)
+            return None
+        return cves
 
-        :param cpe_name: The CPE name
-        :param prnt: If True, prints out the CVEs instead of returning Cursor for CVEs. Always returns None, Defaults to False.
-        :return: Cursor for all CVEs, None if not found. None if prnt.
-        """
+    def cpe_name_to_cves(self, cpe_name: str, prnt: bool = False) -> Cursor[CVESchema] | None:
+        """Resolve a CPE name to its ref id, then return/print its CVEs."""
         cpe = self.client.cpes.find_one({"cpe_name": cpe_name})
         if not cpe:
             if prnt:
                 print(f"{cpe_name} not found.")
             return None
-
-        if cves := self.cpe_ref_to_cves(cpe["_id"]):
-            if prnt:
-                for cve in stringify_results(cves):
-                    print(cve)
-                return None
-            else:
-                return cves
-        else:
-            if prnt:
-                print(f"CVEs for {cpe_name} not found.")
-            return None
+        return self.cpe_ref_to_cves(cpe["_id"], prnt=prnt)
 
     def ml_find_cpe(
-            self,
-            cpe_search_str: str,
-            frmt: Literal["Vpv", "pv"] = "Vpv",
-            threshold: float = 80.0,
-            limit: int = 10
+        self,
+        cpe_search_str: str,
+        frmt: Literal["Vpv", "pv"] = "Vpv",
+        threshold: float = 80.0,
+        limit: int = 10,
+        fast: bool = False
     ) -> Generator[tuple[float, CPESchema], None, None]:
         """
-        Using Levenshtein Distance, find the most similar CPE(s)
-        given a string containing the Vendor, Product, and/or Version.
-        Takes a weighted score across vendor (40%), product (40%),
-        and version (20%) for overall similarity.
+        Fuzzy find CPEs using weighted WRatio across vendor/product/version.
 
-        :param cpe_search_str: String to search for
-        :param frmt: The specific ordering of token elements in the string.
-        V = Vendor, p = Product, v = Version. Defaults to "Vpv",
-        choices are "Vpv" and "pv".
-        :param threshold: Minimum WRatio score to be included in results.
-        :param limit: Maximum number of results to return. Defaults to 10, set to -1 to return all.
-        :return: Generator that yields a sorted list of CPEs from highest WRatio score to lowest.
+        Args:
+            cpe_search_str: Search string to match
+            frmt: Format - "Vpv" (vendor product version) or "pv" (product version)
+            threshold: Minimum score (0-100) to include
+            limit: Max results to return (-1 for unlimited)
+            fast: Use Rust acceleration if available
+        """
+        # Use Rust fast path if available and requested
+        if fast and rustyVault is not None:
+            yield from self._ml_find_cpe_rust(cpe_search_str, frmt, threshold, limit)
+        else:
+            yield from self._ml_find_cpe_python(cpe_search_str, frmt, threshold, limit)
+
+    def _ml_find_cpe_rust(
+        self,
+        cpe_search_str: str,
+        frmt: Literal["Vpv", "pv"] = "Vpv",
+        threshold: float = 80.0,
+        limit: int = 10
+    ) -> Generator[tuple[float, CPESchema], None, None]:
+        """
+        Rust-accelerated fuzzy CPE search.
+        """
+        # Fetch candidates with projection to reduce I/O
+        projection = {"_id": 1, "vendor": 1, "product": 1, "version": 1, "cpe_name": 1}
+        candidates = list(self.client.cpes.find({}, projection))
+
+        if not candidates:
+            return
+
+        # Call Rust scorer
+        results = rustyVault.score_candidates(
+            cpe_search_str,
+            candidates,
+            frmt,
+            threshold,
+            limit
+        )
+
+        # Fetch complete CPE documents for the results
+        for score, cpe_dict in results:
+            # Get full CPE document from MongoDB using the _id
+            full_cpe = self.client.cpes.find_one({"_id": cpe_dict["_id"]})
+            if full_cpe:
+                yield (score, full_cpe)
+
+    def _ml_find_cpe_python(
+        self,
+        cpe_search_str: str,
+        frmt: Literal["Vpv", "pv"] = "Vpv",
+        threshold: float = 80.0,
+        limit: int = 10
+    ) -> Generator[tuple[float, CPESchema], None, None]:
+        """
+        Python fallback fuzzy CPE search using RapidFuzz.
         """
         tokens = word_tokenize(cpe_search_str.lower())
         weights = {"vendor": 0.4, "product": 0.4, "version": 0.2}
-        matches = []
-        get_weighted_score: Callable[[list[float]], float]
-        fetcher: tuple
+        matches: list[tuple[float, CPESchema]] = []
+
         if frmt == "Vpv":
             def get_weighted_score(scores: list[float]) -> float:
-                return (
-                        (scores[0] * weights["vendor"]) +
-                        (scores[1] * weights["product"]) +
-                        (scores[2] * weights["version"])
-                )
-
+                return (scores[0] * weights["vendor"]) + (scores[1] * weights["product"]) + (scores[2] * weights["version"])
             fetcher = (
-                (tokens[0], itemgetter("vendor")),
-                (tokens[1], itemgetter("product")),
-                (tokens[2], itemgetter("version")),
+                (tokens[0] if len(tokens) > 0 else "", itemgetter("vendor")),
+                (tokens[1] if len(tokens) > 1 else "", itemgetter("product")),
+                (tokens[2] if len(tokens) > 2 else "", itemgetter("version")),
             )
         elif frmt == "pv":
             def get_weighted_score(scores: list[float]) -> float:
-                return (
-                        (scores[0] * weights["product"]) +
-                        (scores[1] * weights["version"])
-                )
-
+                return (scores[0] * weights["product"]) + (scores[1] * weights["version"])
             fetcher = (
-                (tokens[0], itemgetter("product")),
-                (tokens[1], itemgetter("version")),
+                (tokens[0] if len(tokens) > 0 else "", itemgetter("product")),
+                (tokens[1] if len(tokens) > 1 else "", itemgetter("version")),
             )
         else:
-            raise ValueError(f"frmt \"{frmt}\" is not supported")
+            raise ValueError(f'frmt "{frmt}" is not supported')
 
-        for cpe in self.client.cpes.find({}):
+        projection = {"vendor": 1, "product": 1, "version": 1, "cpe_name": 1, "_id": 1}
+        for cpe in self.client.cpes.find({}, projection):
             match_scores = [WRatio(srch_str, db_itm_gttr(cpe)) for srch_str, db_itm_gttr in fetcher]
-            if (score := get_weighted_score(match_scores)) > threshold:
+            score = get_weighted_score(match_scores)
+            if score > threshold:
                 matches.append((score, cpe))
-        matches.sort(key=itemgetter(0), reverse=True)
+
+        matches.sort(key=lambda x: (-x[0], x[1].get("cpe_name", "")))
         for entry_num, match in enumerate(matches, 1):
             if limit != -1 and entry_num > limit:
                 return
             yield match
 
     def p_ml_find_cpe(
-            self,
-            cpe_search_str: str,
-            frmt: Literal["Vpv", "pv"] = "Vpv",
-            threshold: float = 80.0,
-            limit: int = 10
+        self,
+        cpe_search_str: str,
+        frmt: Literal["Vpv", "pv"] = "Vpv",
+        threshold: float = 80.0,
+        limit: int = 10,
+        fast: bool = False
     ) -> None:
-        """
-        Prints results gathered from ml_find_cpe.
-
-        :param cpe_search_str: String to search for
-        :param frmt: The specific ordering of token elements in the string.
-        V = Vendor, p = Product, v = Version. Defaults to "Vpv",
-        choices are "Vpv" and "pv".
-        :param threshold: Minimum WRatio score to be included in results.
-        :param limit: Maximum number of results to return. Defaults to 10, set to -1 to return all.
-        :return: Sorted list of CPEs from highest WRatio score to lowest.
-        """
-        for match_score, cpe in self.ml_find_cpe(cpe_search_str, frmt, threshold, limit):
+        """Pretty-print fuzzy CPE matches."""
+        for match_score, cpe in self.ml_find_cpe(cpe_search_str, frmt, threshold, limit, fast):
             print(f"[[Match Score {match_score}%]]\n{cpe_str(cpe)}")
 
 
@@ -248,20 +233,45 @@ if __name__ == '__main__':
     arg_parse = VaultArgumentParser(prog="VulnVault Query")
     op_group = arg_parse.add_argument_group("Operations", "Main Operations, must choose one.")
     op_select = op_group.add_mutually_exclusive_group(required=True)
-    op_select.add_argument("--cpe",
-                           help="print CPE information about a specific CPE by CPE name")
-    op_select.add_argument("--cpeid",
-                           help="print CPE information about a specific CPE by CPE reference _id")
-    op_select.add_argument("--cve",
-                           help="print CVE information about a specfic CVE by CVE ID")
-    op_select.add_argument("--cpe2cves",
-                           help="print all CVEs given a CPE name")
-    op_select.add_argument("--str2cpes",
-                           help="prints closest matching CPE(s) given "
-                                "string in the form '<VENDOR> <PRODUCT> <VERSION>'.")
+
+    op_select.add_argument("--cpe", help="print CPE information about a specific CPE by CPE name")
+    op_select.add_argument("--cpeid", help="print CPE information about a specific CPE by CPE reference _id")
+    op_select.add_argument("--cve", help="print CVE information about a specfic CVE by CVE ID")
+    op_select.add_argument("--cpe2cves", help="print all CVEs given a CPE name")
+    op_select.add_argument("--str2cpes", help="prints closest matching CPE(s) given string in the form '<VENDOR> <PRODUCT> <VERSION>'.")
+
+    # Rust sanity check (does not require Mongo or NLTK)
+    op_select.add_argument("--rust-test", action="store_true",
+                           help="call into the rustyVault extension to verify build/link")
+
+    # Additional options for str2cpes
+    op_augments = arg_parse.add_argument_group("Search Options")
+    op_augments.add_argument("--fast", action="store_true", default=False,
+                            help="use Rust acceleration for fuzzy search (requires rustyVault module)")
+    op_augments.add_argument("--threshold", type=float, default=80.0,
+                            help="minimum similarity score (0-100) to include results (default: 80.0)")
+    op_augments.add_argument("--limit", type=int, default=10,
+                            help="maximum number of results to return (default: 10, -1 for unlimited)")
+    op_augments.add_argument("--format", choices=["Vpv", "pv"], default="Vpv",
+                            help="search format: Vpv (vendor product version) or pv (product version)")
+
     args = arg_parse.parse_args()
 
-    config = VaultConfig(args.config)
+    if args.rust_test:
+        try:
+            import rustyVault  # compiled PyO3 module
+            print(rustyVault.hi())
+            print("2 + 3 =", rustyVault.add(2, 3))
+            C.print_success("Rust module test completed successfully!")
+        except Exception as e:
+            C.print_fail(f"rustyVault import/call failed: {e}")
+            print("Make sure the Rust PyO3 module is compiled and in the Python path.")
+        raise SystemExit(0)
+
+    # Normal path - setup MongoDB and NLTK
+    # Handle config path - argparser returns list if nargs=1
+    config_path = args.config[0] if isinstance(args.config, list) else args.config
+    config = VaultConfig(config_path)
     s_print("Connecting to MongoDB...")
     mngo_client = VaultMongoClient(config).raise_if_not_connected()
     C.print_success("Connected.")
@@ -281,4 +291,16 @@ if __name__ == '__main__':
     elif args.cpe2cves:
         query.cpe_name_to_cves(args.cpe2cves, prnt=True)
     elif args.str2cpes:
-        query.p_ml_find_cpe(args.str2cpes)
+        # Notify user if --fast was requested but Rust module is unavailable
+        if args.fast and rustyVault is None:
+            C.print_fail("Warning: --fast requested but rustyVault module not available. Falling back to Python scorer.")
+        elif args.fast:
+            C.print_success("Using Rust-accelerated scorer.")
+
+        query.p_ml_find_cpe(
+            args.str2cpes,
+            frmt=args.format,
+            threshold=args.threshold,
+            limit=args.limit,
+            fast=args.fast
+        )

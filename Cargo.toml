@@ -1,0 +1,19 @@
+[package]
+name = "rustyVault"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "rustyVault"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.22", features = ["extension-module"] }
+rayon = "1.10"
+# Using strsim for simple similarity - lightweight alternative to rapidfuzz
+strsim = "0.11"
+
+[profile.release]
+lto = true
+codegen-units = 1
+opt-level = 3

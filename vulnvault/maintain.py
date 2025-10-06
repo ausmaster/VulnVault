@@ -177,6 +177,8 @@ if __name__ == "__main__":
                            help="updates the CVE collection")
     op_select.add_argument("--updatecpematches", action="store_true",
                            help="updates the CPE match collection")
+    op_select.add_argument("--rust-test", action="store_true",
+                           help="test Rust integration (PyO3 module)")
     op_augments = arg_parse.add_argument_group("Operation Augments")
     op_augments.add_argument("-p", "--purge", action="store_true", default=False,
                              help="purges selected collection before performing operation. "
@@ -187,9 +189,25 @@ if __name__ == "__main__":
         for i in range(0, len(api_options), 2)
     }
 
+    # Handle rust-test early, before MongoDB setup
+    if args.rust_test:
+        try:
+            import rustyVault  # compiled PyO3 module
+            print(rustyVault.hi())
+            print("2 + 3 =", rustyVault.add(2, 3))
+            C.print_success("Rust module test completed successfully!")
+        except ImportError as e:
+            C.print_fail(f"Failed to import rustyVault module: {e}")
+            print("Make sure the Rust PyO3 module is compiled and in the Python path.")
+        except Exception as e:
+            C.print_fail(f"rustyVault call failed: {e}")
+        raise SystemExit(0)
+
+    # Setup MongoDB connection for all other operations
     vault_mongo, nvd_api, arg_to_print_and_func = setup(args.config)
 
     d_now = Datetime.now()
+
     if args.init:
         initial_load(d_now)
     elif args.fetchcpes:

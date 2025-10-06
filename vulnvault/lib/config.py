@@ -23,7 +23,7 @@ class VaultConfig:  # pylint: disable=R0902,R0903
         # NVD CPE Match Criteria API
         self.nvd_cpe_mc_api: str = "https://services.nvd.nist.gov/rest/json/cpematch/2.0"
         # NVD API Key
-        self.api_key: str = ""
+        self.api_key: str = "95df83d4-94ab-4194-914f-9a8b586e7836"
         # MongoDB Docker Container Hostname
         self.mongo_host: str = "localhost"
         # MongoDB Docker Container Port
