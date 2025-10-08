@@ -1,0 +1,19 @@
+[MESSAGES CONTROL]
+disable=
+    C0301,  # Line too long
+    C0103,  # Invalid constant name
+    W0718,  # Broad exception caught
+    R0914,  # Too many local variables
+    R0912,  # Too many branches
+    R0913,  # Too many arguments
+    R0917,  # Too many positional arguments
+    W0611,  # Unused import
+    R0801   # Duplicate code
+
+[FORMAT]
+max-line-length=120
+
+[DESIGN]
+max-locals=25
+max-branches=20
+max-arguments=10
