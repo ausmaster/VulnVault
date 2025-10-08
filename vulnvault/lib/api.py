@@ -390,7 +390,7 @@ class NVDFetch:  # pylint: disable=R0902
         :return: Serialized list of CPE matches.
         """
         cpe_matches = []
-        for match in res_cpe_matches:
+        for match in rest_cpe_matches:
             match = {
                 camel_to_snake(k): v
                 for k, v in match["matchString"].items()
@@ -455,6 +455,25 @@ class NVDFetch:  # pylint: disable=R0902
             **kwargs
         )
 
+@staticmethod
+def __serialize_cpe_matches(res_cpe_matches: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """
+    Serializes CPE matches to MongoDB digestable form.
+
+    :param res_cpe_matches: List of CPE matches returned from API.
+    :return: Serialized list of CPE matches.
+    """
+    cpe_matches = []
+    for match in res_cpe_matches:
+        match = {
+            camel_to_snake(k): v
+            for k, v in match["matchString"].items()
+        }
+        match["_id"] = match.pop("match_criteria_id")
+        if c_matches := match.get("matches"):
+            match["matches"] = [_match["cpeNameId"] for _match in c_matches]
+        cpe_matches.append(match)
+    return cpe_matches
 
 class NVDParallelAPICaller:  # pylint: disable=R0902
     """
