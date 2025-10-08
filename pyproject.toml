@@ -19,3 +19,9 @@ dependencies = [
 bindings = "pyo3"
 python-source = "python"
 module-name = "rustyVault"
+
+[tool.pylint.MASTER]
+init-hook='import sys; sys.path.append(".")'
+
+[tool.pylint.'MESSAGES CONTROL']
+disable = ["E0401", "E0611"]

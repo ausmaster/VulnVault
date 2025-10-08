@@ -1,5 +1,5 @@
 use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyTuple};
+use pyo3::types::PyDict;
 use rayon::prelude::*;
 use std::cmp::Ordering;
 
@@ -168,11 +168,150 @@ fn score_candidates<'py>(
     Ok(results)
 }
 
+/// Split CPE name by unescaped colons
+///
+/// Manually iterate through the string and split on colons that aren't escaped
+fn split_cpe_name(cpe_name: &str) -> Vec<String> {
+    let mut parts = Vec::new();
+    let mut current = String::new();
+    let chars: Vec<char> = cpe_name.chars().collect();
+    let mut i = 0;
+
+    while i < chars.len() {
+        if chars[i] == '\\' && i + 1 < chars.len() && chars[i + 1] == ':' {
+            // Escaped colon - add the colon and skip the backslash
+            current.push(':');
+            i += 2;
+        } else if chars[i] == ':' {
+            // Unescaped colon - split here
+            parts.push(current.clone());
+            current.clear();
+            i += 1;
+        } else {
+            // Regular character
+            current.push(chars[i]);
+            i += 1;
+        }
+    }
+
+    // Don't forget the last part
+    if !current.is_empty() || !parts.is_empty() {
+        parts.push(current);
+    }
+
+    parts
+}
+
+/// Parse a CPE name string into its components
+///
+/// Handles escaped colons (\\:) correctly
+/// Returns a dict with all CPE components
+///
+/// Example:
+///     "cpe:2.3:a:vendor:product:1.0:*:*:*:*:*:*:*"
+///     -> {"cpe": "cpe", "cpe_version": "2.3", "part": "a", "vendor": "vendor", ...}
+#[pyfunction]
+fn parse_cpe_name<'py>(py: Python<'py>, cpe_name: &str) -> PyResult<Bound<'py, PyDict>> {
+    let result = PyDict::new_bound(py);
+
+    // Split by unescaped colons
+    let parts = split_cpe_name(cpe_name);
+
+    // CPE 2.3 format has 13 parts total
+    // cpe:2.3:part:vendor:product:version:update:edition:language:sw_edition:target_sw:target_hw:other
+    let fields = [
+        "cpe", "cpe_version", "part", "vendor", "product", "version",
+        "update", "edition", "language", "sw_edition", "target_sw",
+        "target_hw", "other"
+    ];
+
+    for (i, field) in fields.iter().enumerate() {
+        let value = parts.get(i).map(|s| s.as_str()).unwrap_or("*");
+        result.set_item(field, value)?;
+    }
+
+    Ok(result)
+}
+
+/// Batch parse multiple CPE names in parallel
+///
+/// Args:
+///     cpe_names: List of CPE name strings
+///
+/// Returns:
+///     List of dicts, each containing parsed CPE components
+#[pyfunction]
+fn batch_parse_cpe_names<'py>(
+    py: Python<'py>,
+    cpe_names: Vec<String>,
+) -> PyResult<Vec<Bound<'py, PyDict>>> {
+    let fields = [
+        "cpe", "cpe_version", "part", "vendor", "product", "version",
+        "update", "edition", "language", "sw_edition", "target_sw",
+        "target_hw", "other"
+    ];
+
+    // Parse in parallel (only Rust strings, no Python objects)
+    let parsed: Vec<Vec<String>> = cpe_names
+        .par_iter()
+        .map(|cpe_name| split_cpe_name(cpe_name))
+        .collect();
+
+    // Convert to Python dicts (must be done in main Python thread)
+    let results: Vec<Bound<PyDict>> = parsed
+        .into_iter()
+        .map(|parts| {
+            let dict = PyDict::new_bound(py);
+            for (i, field) in fields.iter().enumerate() {
+                let value = parts.get(i).map(|s| s.as_str()).unwrap_or("*");
+                dict.set_item(field, value).unwrap();
+            }
+            dict
+        })
+        .collect();
+
+    Ok(results)
+}
+
+/// Build a CPE name string from components
+///
+/// Args:
+///     components: Dict with CPE fields (cpe, cpe_version, part, vendor, etc.)
+///
+/// Returns:
+///     CPE name string with properly escaped colons
+#[pyfunction]
+fn build_cpe_name(components: &Bound<PyDict>) -> PyResult<String> {
+    let fields = [
+        "cpe", "cpe_version", "part", "vendor", "product", "version",
+        "update", "edition", "language", "sw_edition", "target_sw",
+        "target_hw", "other"
+    ];
+
+    let parts: Vec<String> = fields
+        .iter()
+        .map(|field| {
+            components
+                .get_item(field)
+                .ok()
+                .flatten()
+                .and_then(|v| v.extract::<String>().ok())
+                .unwrap_or_else(|| "*".to_string())
+                .replace(":", "\\:")  // Escape colons
+        })
+        .collect();
+
+    Ok(parts.join(":"))
+}
+
 #[pymodule]
 fn rustyVault(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(hi, m)?)?;
     m.add_function(wrap_pyfunction!(add, m)?)?;
     m.add_function(wrap_pyfunction!(score_candidates, m)?)?;
+    m.add_function(wrap_pyfunction!(parse_cpe_name, m)?)?;
+    m.add_function(wrap_pyfunction!(batch_parse_cpe_names, m)?)?;
+    m.add_function(wrap_pyfunction!(build_cpe_name, m)?)?;
     Ok(())
 }
 

@@ -10,7 +10,12 @@ from typing import Callable, Literal, Generator
 import nltk
 from nltk.tokenize import word_tokenize
 from pymongo.cursor import Cursor
-from rapidfuzz.fuzz import WRatio
+
+# Try to import RapidFuzz, fall back to None if unavailable
+try:
+    from rapidfuzz.fuzz import WRatio
+except ImportError:
+    WRatio = None
 
 # pylint: disable=E0401,E0611
 from lib import VaultArgumentParser, VaultConfig, VaultMongoClient, s_print
@@ -132,11 +137,18 @@ class VaultQuery:
             limit: Max results to return (-1 for unlimited)
             fast: Use Rust acceleration if available
         """
-        # Use Rust fast path if available and requested
+        # Determine which implementation to use
         if fast and rustyVault is not None:
             yield from self._ml_find_cpe_rust(cpe_search_str, frmt, threshold, limit)
-        else:
+        elif WRatio is not None:
+            if fast:
+                C.print_fail("Warning: --fast requested but rustyVault not available. Using Python with RapidFuzz.")
             yield from self._ml_find_cpe_python(cpe_search_str, frmt, threshold, limit)
+        else:
+            raise RuntimeError(
+                "No fuzzy matching implementation available. "
+                "Install 'rapidfuzz' (pip install rapidfuzz) or compile the Rust extension."
+            )
 
     def _ml_find_cpe_rust(
         self,
@@ -291,11 +303,23 @@ if __name__ == '__main__':
     elif args.cpe2cves:
         query.cpe_name_to_cves(args.cpe2cves, prnt=True)
     elif args.str2cpes:
-        # Notify user if --fast was requested but Rust module is unavailable
+        # Check what's available and inform user
         if args.fast and rustyVault is None:
-            C.print_fail("Warning: --fast requested but rustyVault module not available. Falling back to Python scorer.")
+            C.print_fail("Warning: --fast requested but rustyVault module not available.")
+            if WRatio is None:
+                C.print_fail("ERROR: RapidFuzz also not available. Cannot perform search.")
+                raise SystemExit(1)
+            C.print_fail("Falling back to Python scorer with RapidFuzz.")
         elif args.fast:
             C.print_success("Using Rust-accelerated scorer.")
+        else:
+            if WRatio is None:
+                C.print_fail("Warning: RapidFuzz not available. Trying Rust scorer...")
+                if rustyVault is None:
+                    C.print_fail("ERROR: Neither RapidFuzz nor rustyVault available. Cannot perform search.")
+                    raise SystemExit(1)
+                args.fast = True  # Force Rust usage
+                C.print_success("Using Rust-accelerated scorer.")
 
         query.p_ml_find_cpe(
             args.str2cpes,

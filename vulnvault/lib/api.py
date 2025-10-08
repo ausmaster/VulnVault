@@ -21,6 +21,14 @@ from .config import VaultConfig
 from .utils import BColors as C
 from .utils import camel_to_snake, snake_to_camel, int_to_ordinal, s_print
 
+# Try to import Rust module for faster CPE parsing
+try:
+    import rustyVault
+    RUST_AVAILABLE = True
+except ImportError:
+    rustyVault = None
+    RUST_AVAILABLE = False
+
 DATETIME_FORMAT: Final[str] = "%m/%d/%Y %H:%M:%S"
 
 
@@ -225,6 +233,14 @@ class NVDFetch:  # pylint: disable=R0902
         return results
 
     @staticmethod
+    def __split_cpe_name_python(cpe_name: str) -> list[str]:
+        """Python fallback for CPE name splitting."""
+        return [
+            part.replace("\\:", ":")
+            for part in split(r"(?<!\\):", cpe_name)
+        ]
+
+    @staticmethod
     def __serialize_cpes(res_cpes: list[dict[str, dict[str, Any]]]) -> list[dict[str, Any]]:  # pylint: disable=R0914
         """
         Serializes CPEs to MongoDB digestable form.
@@ -240,21 +256,44 @@ class NVDFetch:  # pylint: disable=R0902
                                       if title["lang"] == "en"), "")
             return cpe_rtrn
 
+        # Use Rust parser if available, otherwise fall back to Python
+        if RUST_AVAILABLE:
+            # Batch parse all CPE names at once using Rust
+            cpe_names = [cpe["cpe"]["cpeName"] for cpe in res_cpes]
+
+            try:
+                parsed_components = rustyVault.batch_parse_cpe_names(cpe_names)
+
+                cpes: list[dict[str, Any]] = []
+                for i, cpe in enumerate(res_cpes):
+                    cpe_dict = cpe_to_snake_case(cpe["cpe"])
+                    # Add parsed components (excluding cpe and cpe_version)
+                    components = parsed_components[i]
+                    cpe_dict.update({
+                        k: v for k, v in components.items()
+                        if k not in ("cpe", "cpe_version")
+                    })
+                    cpes.append(cpe_dict)
+
+                C.print_success("Used Rust-accelerated CPE parsing.")
+                return cpes
+            except Exception as e:
+                C.print_fail(f"Rust CPE parsing failed: {e}. Falling back to Python.")
+                # Fall through to Python implementation
+
+        # Python fallback
         def split_cpe_name(cpe_name: str) -> list[str]:
-            return [
-                part.replace("\\:", ":")
-                for part in split(r"(?<!\\):", cpe_name)
-            ]
+            return NVDFetch.__split_cpe_name_python(cpe_name)
 
         cpes: list[dict[str, Any]] = []
         for cpe in res_cpes:
-            cpe = cpe_to_snake_case(cpe["cpe"])
-            cpe.update({
+            cpe_dict = cpe_to_snake_case(cpe["cpe"])
+            cpe_dict.update({
                 k: v for k, v in
-                CPEComponents(*split_cpe_name(cpe["cpe_name"]))._asdict().items()
+                CPEComponents(*split_cpe_name(cpe_dict["cpe_name"]))._asdict().items()
                 if k not in ("cpe", "cpe_version")
             })
-            cpes.append(cpe)
+            cpes.append(cpe_dict)
 
         return cpes
 
@@ -266,6 +305,17 @@ class NVDFetch:  # pylint: disable=R0902
         :param res_cves: List of CVEs returned from API.
         :return: Serialized list of CVEs.
         """
+        # Try Rust serialization first
+        if RUST_AVAILABLE:
+            try:
+                serialized = rustyVault.batch_serialize_cves(res_cves)
+                C.print_success("Used Rust-accelerated CVE serialization.")
+                return serialized
+            except Exception as e:
+                C.print_fail(f"Rust CVE serialization failed: {e}. Falling back to Python.")
+                # Fall through to Python implementation
+
+        # Python fallback implementation (keep existing code)
         def flatten_cvss(metric: dict[str, Any]) -> dict[str, Any] | None:
             if not metric:
                 return None
@@ -333,9 +383,6 @@ class NVDFetch:  # pylint: disable=R0902
                 "references": references
             })
         return cves
-
-    @staticmethod
-    def __serialize_cpe_matches(res_cpe_matches: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """
         Serializes CPE matches to MongoDB digestable form.
 
