@@ -1,0 +1,316 @@
+"""
+Provides async query classes for querying items from the MongoDB.
+"""
+from __future__ import annotations
+
+from operator import itemgetter
+from typing import Callable, Literal, Any, AsyncGenerator
+
+from nltk.tokenize import word_tokenize
+from pymongo.asynchronous.cursor import AsyncCursor
+from rapidfuzz.fuzz import WRatio
+
+from vulnvault.lib.async_mongo import AsyncVaultMongoClient
+from vulnvault.lib.config import VaultConfig
+from vulnvault.lib.api import (
+    CPESchema,
+    CVESchema,
+    cpe_str,
+    cve_str,
+)
+from vulnvault.lib.utils import s_print
+from vulnvault.lib.utils import BColors as C
+
+
+class AsyncVaultQuery:
+    """Main class to query items from the Vault MongoDB."""
+    _mongo: AsyncVaultMongoClient
+    _connected: bool
+
+    def __init__(
+            self,
+            mongo_client: AsyncVaultMongoClient | None = None,
+            config_path: str = "config.json",
+            suppress_prnt: bool = False,
+    ) -> None:
+        if mongo_client is not None:
+            self._mongo = mongo_client
+        else:
+            self._mongo = AsyncVaultMongoClient(VaultConfig(config_path))
+        self._connected = False
+        if not suppress_prnt:
+            s_print("Connecting to MongoDB...")
+            C.print_success("Initialized.")
+
+    async def connect(self) -> None:
+        """Establishes connection to MongoDB if not already connected."""
+        if not self._connected:
+            await self._mongo.aconnect()
+            self._connected = True
+
+    async def cve_id(
+            self,
+            cve_id: str,
+            prnt: bool = False,
+            cve_proj: dict[str, Any] | list[str] | None = None
+    ) -> CVESchema | None:
+        """Queries/Prints CVE information given actual CVE ID.
+
+        Args:
+            cve_id: The CVE ID (_id aligns to the actual NVD CVE ID).
+            prnt: If True, prints the CVE information instead of returning it. Defaults to False.
+            cve_proj: Projection for the query.
+
+        Returns:
+            CVE Record in CVESchema, None if not found or if prnt is True.
+        """
+        if cve_proj is None:
+            cve_proj = {}
+
+        if cve := await self._mongo.cves.find_one({"_id": cve_id}, projection=cve_proj):
+            if prnt:
+                print(cve_str(cve))
+                return None
+            return cve
+        if prnt:
+            print(f"{cve_id} not found.")
+        return None
+
+    async def cpe_ref(self, cpe_id: str, prnt: bool = False) -> CPESchema | None:
+        """Queries/Prints CPE information given CPE reference _id in Mongo.
+
+        Args:
+            cpe_id: The CPE reference _id.
+            prnt: If True, prints the CPE information instead of returning it. Defaults to False.
+
+        Returns:
+            CPE Record in CPESchema, None if not found or if prnt is True.
+        """
+        if cpe := await self._mongo.cpes.find_one({"_id": cpe_id}):
+            if prnt:
+                print(cpe_str(cpe))
+                return None
+            return cpe
+        if prnt:
+            print(f"{cpe_id} not found.")
+        return None
+
+    async def cpe_name(self, cpe_name: str, prnt: bool = False) -> CPESchema | None:
+        """Queries/Prints CPE information given CPE Name (CPE String).
+
+        Args:
+            cpe_name: The NVD CPE Name.
+            prnt: If True, prints the CPE information instead of returning it. Defaults to False.
+
+        Returns:
+            CPE Record in CPESchema, None if not found or if prnt is True.
+        """
+        if cpe := await self._mongo.cpes.find_one({"cpe_name": cpe_name}):
+            if prnt:
+                print(cpe_str(cpe))
+                return None
+            return cpe
+        if prnt:
+            print(f"{cpe_name} not found.")
+        return None
+
+    async def cpe_matches(
+            self,
+            cpe_id: str,
+            prnt: bool = False,
+            cpematches_proj: dict[str, Any] | list[str] | None = None
+    ) -> list[CPESchema] | None:
+        """Queries/Prints CPE matches information given CPE reference _id.
+
+        Args:
+            cpe_id: The CPE _id.
+            prnt: If True, prints the CPE matches instead of returning them. Defaults to False.
+            cpematches_proj: Projection for the query.
+
+        Returns:
+            List of matches, None if not found or if prnt is True.
+        """
+        if cpematches_proj is None:
+            cpematches_proj = {}
+
+        cursor = self._mongo.cpematches.find({"matches": cpe_id}, projection=cpematches_proj)
+        matches = await cursor.to_list(None)
+
+        if not matches:
+            if prnt:
+                print(f"{cpe_id} not found.")
+            return None
+        if prnt:
+            for match in matches:
+                print(match)
+            return None
+        return matches
+
+    async def cpe_ref_to_cves(
+            self,
+            cpe_id: str,
+            prnt: bool = False,
+            cve_proj: dict[str, Any] | list[str] | None = None
+    ) -> list[CVESchema] | None:
+        """Queries CVEs linked to a CPE reference _id via cpematches.
+
+        Args:
+            cpe_id: The CPE reference _id.
+            prnt: If True, prints the CVEs instead of returning them. Defaults to False.
+            cve_proj: Projection for the query.
+
+        Returns:
+            List of CVEs, None if not found or if prnt is True.
+        """
+        if cve_proj is None:
+            cve_proj = {}
+
+        matches = await self.cpe_matches(cpe_id)
+        if not matches:
+            if prnt:
+                print(f"No matches found for {cpe_id}.")
+            return None
+
+        match_ids = [match["_id"] for match in matches]
+
+        cursor = self._mongo.cves.find(
+            {
+                "configurations.nodes.cpeMatch": {
+                    "$elemMatch": {"matchCriteriaId": {"$in": match_ids}}
+                }
+            },
+            projection=cve_proj
+        )
+        cves = await cursor.to_list(None)
+
+        if not cves:
+            if prnt:
+                print(f"CVEs for {cpe_id} not found.")
+            return None
+        if prnt:
+            for cve in cves:
+                print(cve_str(cve))
+            return None
+        return cves
+
+    async def cpe_name_to_cves(
+            self,
+            cpe_name: str,
+            prnt: bool = False,
+            cve_proj: dict[str, Any] | list[str] | None = None
+    ) -> list[CVESchema] | None:
+        """Queries/Prints CVEs given a CPE Name (CPE String).
+
+        Args:
+            cpe_name: The CPE name.
+            prnt: If True, prints the CVEs instead of returning them. Defaults to False.
+            cve_proj: Projection for the query.
+
+        Returns:
+            List of CVEs, None if not found or if prnt is True.
+        """
+        if cve_proj is None:
+            cve_proj = {}
+
+        cpe = await self._mongo.cpes.find_one({"cpe_name": cpe_name})
+        if not cpe:
+            if prnt:
+                print(f"{cpe_name} not found.")
+            return None
+
+        cves = await self.cpe_ref_to_cves(cpe["_id"], cve_proj=cve_proj)
+        if not cves:
+            if prnt:
+                print(f"CVEs for {cpe_name} not found.")
+            return None
+        if prnt:
+            for cve in cves:
+                print(cve_str(cve))
+            return None
+        return cves
+
+    async def ml_find_cpe(
+            self,
+            cpe_search_str: str,
+            frmt: Literal["Vpv", "pv"] = "Vpv",
+            threshold: float = 80.0,
+            limit: int = 10
+    ) -> AsyncGenerator[tuple[float, CPESchema], None]:
+        """Fuzzy find CPEs using weighted WRatio across vendor/product/version.
+
+        Uses Levenshtein Distance to find the most similar CPE(s) given a string
+        containing the Vendor, Product, and/or Version. Takes a weighted score
+        across vendor (40%), product (40%), and version (20%) for overall similarity.
+
+        Args:
+            cpe_search_str: String to search for.
+            frmt: The specific ordering of token elements in the string.
+                V = Vendor, p = Product, v = Version. Defaults to "Vpv",
+                choices are "Vpv" and "pv".
+            threshold: Minimum WRatio score to be included in results.
+            limit: Maximum number of results to return. Defaults to 10, -1 for all.
+
+        Yields:
+            Tuples of (score, CPE) sorted from highest WRatio score to lowest.
+        """
+        tokens = word_tokenize(cpe_search_str.lower())
+        weights = {"vendor": 0.4, "product": 0.4, "version": 0.2}
+        matches: list[tuple[float, CPESchema]] = []
+        get_weighted_score: Callable[[list[float]], float]
+        fetcher: tuple
+        if frmt == "Vpv":
+            def get_weighted_score(scores: list[float]) -> float:
+                return (
+                        (scores[0] * weights["vendor"]) +
+                        (scores[1] * weights["product"]) +
+                        (scores[2] * weights["version"])
+                )
+
+            fetcher = (
+                (tokens[0], itemgetter("vendor")),
+                (tokens[1], itemgetter("product")),
+                (tokens[2], itemgetter("version")),
+            )
+        elif frmt == "pv":
+            def get_weighted_score(scores: list[float]) -> float:
+                return (
+                        (scores[0] * weights["product"]) +
+                        (scores[1] * weights["version"])
+                )
+
+            fetcher = (
+                (tokens[0], itemgetter("product")),
+                (tokens[1], itemgetter("version")),
+            )
+        else:
+            raise ValueError(f"frmt \"{frmt}\" is not supported")
+
+        async for cpe in self._mongo.cpes.find({}):
+            match_scores = [WRatio(srch_str, db_itm_gttr(cpe)) for srch_str, db_itm_gttr in fetcher]
+            if (score := get_weighted_score(match_scores)) > threshold:
+                matches.append((score, cpe))
+        matches.sort(key=itemgetter(0), reverse=True)
+        for entry_num, match in enumerate(matches, 1):
+            if limit != -1 and entry_num > limit:
+                return
+            yield match
+
+    async def p_ml_find_cpe(
+            self,
+            cpe_search_str: str,
+            frmt: Literal["Vpv", "pv"] = "Vpv",
+            threshold: float = 80.0,
+            limit: int = 10
+    ) -> None:
+        """Pretty-prints results gathered from ml_find_cpe.
+
+        Args:
+            cpe_search_str: String to search for.
+            frmt: The specific ordering of token elements in the string.
+                V = Vendor, p = Product, v = Version. Defaults to "Vpv",
+                choices are "Vpv" and "pv".
+            threshold: Minimum WRatio score to be included in results.
+            limit: Maximum number of results to return. Defaults to 10, -1 for all.
+        """
+        async for match_score, cpe in self.ml_find_cpe(cpe_search_str, frmt, threshold, limit):
+            print(f"[[Match Score {match_score}%]]\n{cpe_str(cpe)}")

@@ -17,7 +17,6 @@ from vulnvault.lib import (
     VaultConfig,
     VaultMongoClient,
     s_print,
-    AsyncVaultMongoClient,
 )
 from vulnvault.lib import BColors as C
 
@@ -27,64 +26,32 @@ class MetadataNotFoundException(Exception):
     Exception raised when a metadata entry cannot be found.
     """
 
-class VaultMaintenance:
-    _mongo: VaultMongoClient | AsyncVaultMongoClient
-    _async: bool
-    _connected: bool
 
+class VaultMaintenance:
+    _mongo: VaultMongoClient
+    _suppress_prnt: bool
     _arg_to_print_and_func: dict[str, tuple[str, Callable]]
 
     def __init__(
             self,
-            mongo_client: VaultMongoClient | AsyncVaultMongoClient | None = None,
+            mongo_client: VaultMongoClient | None = None,
             config_path: str = "config.json",
-            create_async: bool = False,
             suppress_prnt: bool = False,
     ) -> None:
-        config: VaultConfig
-
-        if mongo_client:
-            self._async = isinstance(mongo_client, AsyncVaultMongoClient)
-
-            if self._async:
-                # We cannot call raise_if_not_connected() here
-                if not suppress_prnt:
-                    print(
-                        "Cannot connect to MongoDB ahead of time in async mode. "
-                        "Run query first to establish connection."
-                    )
-                self._mongo = mongo_client
-                self._connected = False
-            else:
-                if not suppress_prnt:
-                    s_print("Connecting to MongoDB...")
-                self._mongo = mongo_client.raise_if_not_connected()
-                if not suppress_prnt:
-                    C.print_success("Connected.")
-                self._connected = True
-
+        if mongo_client is not None:
+            if not suppress_prnt:
+                s_print("Connecting to MongoDB...")
+            self._mongo = mongo_client.raise_if_not_connected()
+            if not suppress_prnt:
+                C.print_success("Connected.")
             config = self._mongo.vv_config
         else:
-            if create_async:
-                # We cannot call raise_if_not_connected() here
-                if not suppress_prnt:
-                    print(
-                        "Cannot connect to MongoDB ahead of time in async mode. "
-                        "Run query first to establish connection."
-                    )
-                config = VaultConfig(config_path)
-                self._mongo = AsyncVaultMongoClient(config)
-                self._async = True
-                self._connected = False
-            else:
-                if not suppress_prnt:
-                    s_print("Connecting to MongoDB...")
-                config = VaultConfig(config_path)
-                self._mongo = VaultMongoClient(config).raise_if_not_connected()
-                if not suppress_prnt:
-                    C.print_success("Connected.")
-                self._async = False
-                self._connected = True
+            if not suppress_prnt:
+                s_print("Connecting to MongoDB...")
+            config = VaultConfig(config_path)
+            self._mongo = VaultMongoClient(config).raise_if_not_connected()
+            if not suppress_prnt:
+                C.print_success("Connected.")
 
         api = NVDFetch(config)
         self._arg_to_print_and_func = {
@@ -96,12 +63,10 @@ class VaultMaintenance:
         self._config = config
 
     def initial_load(self, now: Datetime) -> None:
-        """
-        Provides the initial procedure of fetching and insering data into
-        all available collections from NVD.
+        """Provides the initial procedure of fetching and inserting data into all available collections from NVD.
 
-        :param now: DateTime now
-        :return: None
+        Args:
+            now: DateTime now.
         """
         self._mongo.db.drop_collection("metadata")
         self.insert_collection("cpes", now, drop=True)
@@ -110,17 +75,20 @@ class VaultMaintenance:
         self.update_metadata("cves", now)
         self.insert_collection("cpematches", now, drop=True)
         self.update_metadata("cpematches", now)
-
+        if not self._suppress_prnt:
+            s_print("Creating indexes...")
+        self._mongo.ensure_indexes()
+        if not self._suppress_prnt:
+            C.print_success("Indexes created.")
 
     def insert_collection(self, coll: str, now: Datetime, drop: bool = False, **kwargs) -> None:
-        """
-        Procedure for inserting API entries.
+        """Procedure for inserting API entries.
 
-        :param coll: Collection name
-        :param now: DateTime now
-        :param drop: Drop collection before inserting entries
-        :param kwargs: API keyward arguments
-        :return: None
+        Args:
+            coll: Collection name.
+            now: DateTime now.
+            drop: Drop collection before inserting entries.
+            **kwargs: API keyword arguments.
         """
         print_coll_str, api_call = self._arg_to_print_and_func[coll]
         if drop:
@@ -175,13 +143,11 @@ class VaultMaintenance:
                     sleep(delay)
                     delay *= self._config.conn_retry_delay_mult
 
-
     def drop_collection(self, coll: str) -> None:
-        """
-        Procedure for dropping a selected collection.
+        """Procedure for dropping a selected collection.
 
-        :param coll: Collection name
-        :return: None
+        Args:
+            coll: Collection name.
         """
         print_coll_str, _ = self._arg_to_print_and_func[coll]
         if not self._suppress_prnt:
@@ -190,15 +156,13 @@ class VaultMaintenance:
         if not self._suppress_prnt:
             C.print_success("Dropped.")
 
-
     def update_collection(self, coll: str, now: Datetime, **kwargs) -> None:
-        """
-        Procedure for updating collections.
+        """Procedure for updating collections.
 
-        :param coll: Collection name
-        :param now: DateTime now
-        :param kwargs: API keyward arguments
-        :return: None
+        Args:
+            coll: Collection name.
+            now: DateTime now.
+            **kwargs: API keyword arguments.
         """
         print_coll_str, api_call = self._arg_to_print_and_func[coll]
         if not self._suppress_prnt:
@@ -257,13 +221,8 @@ class VaultMaintenance:
             C.print_fail(f"No {print_coll_str} to update.")
         self.update_metadata(coll, now)
 
-
     def update_metadata(self, coll: str, now: Datetime) -> None:
-        """
-        Updates the metadata for the selected collection.
-
-        :return: None
-        """
+        """Updates the metadata for the selected collection."""
         self._mongo.meta.update_one(
             {"collection": coll},
             {"$set": {"updated": now}},
