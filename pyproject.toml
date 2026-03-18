@@ -17,3 +17,39 @@ dependencies = [
     "nltk~=3.9.1",
     "rapidfuzz~=3.9.3"
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.5",
+    "pytest-mock>=3.14.1",
+    "responses>=0.26.0",
+    "ruff>=0.15.6",
+    "unasyncd>=0.8.1",
+]
+
+[tool.unasyncd]
+add_editors_note = true
+transform_docstrings = true
+remove_unused_imports = true
+ruff_fix = true
+
+[tool.unasyncd.files]
+"vulnvault/lib/async_mongo.py" = "vulnvault/lib/mongo.py"
+"vulnvault/async_query.py" = "vulnvault/_query.py"
+
+[tool.unasyncd.add_replacements]
+# pymongo async → sync (fully qualified for import rewriting)
+"pymongo.AsyncMongoClient" = "pymongo.MongoClient"
+"pymongo.asynchronous.collection.AsyncCollection" = "pymongo.collection.Collection"
+"pymongo.asynchronous.database.AsyncDatabase" = "pymongo.database.Database"
+"pymongo.asynchronous.cursor.AsyncCursor" = "pymongo.cursor.Cursor"
+# VulnVault async → sync (fully qualified for import rewriting)
+"vulnvault.lib.async_mongo.AsyncVaultMongoClient" = "vulnvault.lib.mongo.VaultMongoClient"
+"vulnvault.async_query.AsyncVaultQuery" = "vulnvault._query.VaultQuery"
+# Short names (for class definitions and type annotations within the same file)
+"AsyncVaultMongoClient" = "VaultMongoClient"
+"AsyncVaultQuery" = "VaultQuery"
+# Method/function renames
+"aconnect" = "_connect"
+"vulnvault.lib.api.a_stringify_results" = "vulnvault.lib.api.stringify_results"
+"a_stringify_results" = "stringify_results"

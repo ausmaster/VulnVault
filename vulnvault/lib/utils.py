@@ -22,91 +22,97 @@ class BColors:
 
     @classmethod
     def success_msg(cls, msg: str) -> str:
-        """
-        Provides a console green success message.
+        """Provides a console green success message.
 
-        :param msg: Message to turn green.
-        :return: A greenified message.
+        Args:
+            msg: Message to turn green.
+
+        Returns:
+            A greenified message.
         """
         return f"{cls.OKGREEN}{msg}{cls.ENDC}"
 
     @classmethod
     def fail_msg(cls, msg: str) -> str:
-        """
-        Provides a console red fail message.
+        """Provides a console red fail message.
 
-        :param msg: Message to turn red.
-        :return: A red message.
+        Args:
+            msg: Message to turn red.
+
+        Returns:
+            A red message.
         """
         return f"{cls.FAIL}{msg}{cls.ENDC}"
 
     @classmethod
     def underline_msg(cls, msg: str) -> str:
-        """
-        Provides a console underlined message.
+        """Provides a console underlined message.
 
-        :param msg: Message to underline.
-        :return: An underlined message.
+        Args:
+            msg: Message to underline.
+
+        Returns:
+            An underlined message.
         """
         return f"{cls.UNDERLINE}{msg}{cls.ENDC}"
 
     @classmethod
     def bold_msg(cls, msg: str) -> str:
-        """
-        Provides a console bolded message.
+        """Provides a console bolded message.
 
-        :param msg: Message to bold.
-        :return: An bolded message.
+        Args:
+            msg: Message to bold.
+
+        Returns:
+            A bolded message.
         """
         return f"{cls.BOLD}{msg}{cls.ENDC}"
 
     @classmethod
     def print_success(cls, msg: str, **kwargs) -> None:
-        """
-        Prints to console a green success message.
+        """Prints to console a green success message.
 
-        :param msg: Message to turn green and print.
-        :return: None
+        Args:
+            msg: Message to turn green and print.
         """
         print(cls.success_msg(msg), **kwargs)
 
     @classmethod
     def print_fail(cls, msg: str, **kwargs) -> None:
-        """
-        Prints to console a red fail message.
+        """Prints to console a red fail message.
 
-        :param msg: Message to turn red and print.
-        :return: None
+        Args:
+            msg: Message to turn red and print.
         """
         print(cls.fail_msg(msg), **kwargs)
 
     @classmethod
     def print_underline(cls, msg: str, **kwargs) -> None:
-        """
-        Prints to console a underlined message.
+        """Prints to console an underlined message.
 
-        :param msg: Message to underline and print.
-        :return: None
+        Args:
+            msg: Message to underline and print.
         """
         print(cls.underline_msg(msg), **kwargs)
 
     @classmethod
     def print_bold(cls, msg: str, **kwargs) -> None:
-        """
-        Prints to console a bolded message.
+        """Prints to console a bolded message.
 
-        :param msg: Message to bold and print.
-        :return: None
+        Args:
+            msg: Message to bold and print.
         """
         print(cls.bold_msg(msg), **kwargs)
 
 
 def camel_to_snake(cc_str: str) -> str:
-    """
-    Converts a camelCase string to snake_case.
+    """Converts a camelCase string to snake_case.
 
-    :param cc_str: camelCase string to convert.
-    :return: snake_cased string.
+    Args:
+        cc_str: camelCase string to convert.
+
+    Returns:
+        snake_cased string.
     """
     if not cc_str:
         return ""
@@ -121,20 +127,26 @@ def camel_to_snake(cc_str: str) -> str:
 
 
 def snake_to_camel(s_str: str) -> str:
-    """
-    Converts a snake_case string to camelCase.
-    :param s_str: snake_case string to convert.
-    :return: camelCased string.
+    """Converts a snake_case string to camelCase.
+
+    Args:
+        s_str: snake_case string to convert.
+
+    Returns:
+        camelCased string.
     """
     words = s_str.split("_")
     return f"{words[0]}{''.join(word.capitalize() for word in words[1:])}"
 
 
 def int_to_ordinal(n: int) -> str:
-    """
-    Converts an integer to an ordinal string.
-    :param n: Integer to convert.
-    :return: Ordinal string.
+    """Converts an integer to an ordinal string.
+
+    Args:
+        n: Integer to convert.
+
+    Returns:
+        Ordinal string.
     """
     ordinals = {
         1: "primary",
