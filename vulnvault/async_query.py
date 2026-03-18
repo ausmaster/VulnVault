@@ -7,7 +7,6 @@ from operator import itemgetter
 from typing import Callable, Literal, Any, AsyncGenerator
 
 from nltk.tokenize import word_tokenize
-from pymongo.asynchronous.cursor import AsyncCursor
 from rapidfuzz.fuzz import WRatio
 
 from vulnvault.lib.async_mongo import AsyncVaultMongoClient

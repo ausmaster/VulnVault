@@ -19,9 +19,7 @@ from vulnvault.lib.api import (
     cve_str,
     cpe_str,
     stringify_results,
-    DATETIME_FORMAT,
 )
-from vulnvault.lib.config import VaultConfig
 
 
 # ===================================================================

@@ -23,8 +23,8 @@ jobs:
     - name: Check unasyncd generated files are up to date
       run: uv run unasyncd --check
 
-    - name: Lint with pylint
-      run: uv run pylint $(git ls-files '*.py')
+    - name: Lint with ruff
+      run: uv run ruff check
 
     - name: Run tests
       run: uv run pytest
